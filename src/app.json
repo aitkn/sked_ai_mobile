@@ -1,4 +1,4 @@
-{
+ {
   "expo": {
     "name": "SkedAIApp",
     "slug": "SkedAIApp",
@@ -14,7 +14,20 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.skedai.app",
+      "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["skedaiapp"]
+          }
+        ],
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification"
+        ],
+        "NSUserNotificationUsageDescription": "SkedAI needs notification permissions to remind you about your tasks."
+      }
     },
     "android": {
       "adaptiveIcon": {

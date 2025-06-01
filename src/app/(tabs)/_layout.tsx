@@ -29,8 +29,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
+          title: 'Home',
+          tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
           headerRight: () => (
             <Link href="/modal" asChild>
               <Pressable>
@@ -48,10 +48,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="tasks"
+        options={{
+          title: 'Tasks',
+          tabBarIcon: ({ color }) => <TabBarIcon name="check-square" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="two"
         options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
+          title: 'Settings',
+          tabBarIcon: ({ color }) => <TabBarIcon name="cog" color={color} />,
         }}
       />
     </Tabs>
