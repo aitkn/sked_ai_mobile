@@ -1,0 +1,284 @@
+name: Mobile CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.19.0'  # Remove if not using Flutter
+  NODE_VERSION: '20'
+  RUBY_VERSION: '3.2'
+  JAVA_VERSION: '17'
+
+jobs:
+  # Determine what changed to optimize CI runs
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
+      android: ${{ steps.filter.outputs.android }}
+      shared: ${{ steps.filter.outputs.shared }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ios:
+              - 'ios/**'
+              - 'shared/**'
+              - '.github/workflows/mobile-ci.yml'
+            android:
+              - 'android/**'
+              - 'shared/**'
+              - '.github/workflows/mobile-ci.yml'
+            shared:
+              - 'shared/**'
+
+  # Shared code quality checks
+  lint-and-test:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.shared == 'true' || needs.changes.outputs.ios == 'true' || needs.changes.outputs.android == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      # If using React Native or shared JS code
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd shared && npm ci
+      
+      - name: Run linting
+        run: |
+          npm run lint
+          cd shared && npm run lint
+      
+      - name: Run shared tests
+        run: |
+          npm test
+          cd shared && npm test -- --coverage
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          directory: ./shared/coverage
+          flags: shared
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # iOS Build and Test
+  ios-build:
+    runs-on: macos-latest
+    needs: [changes, lint-and-test]
+    if: ${{ needs.changes.outputs.ios == 'true' }}
+    timeout-minutes: 60
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+          working-directory: ios
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      # Cache CocoaPods
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: ios/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('**/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+      
+      # Cache Xcode derived data
+      - name: Cache Xcode derived data
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-xcode-${{ hashFiles('**/*.xcodeproj/project.pbxproj') }}
+          restore-keys: |
+            ${{ runner.os }}-xcode-
+      
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd ios && bundle install
+      
+      - name: Install CocoaPods
+        run: |
+          cd ios && pod install
+      
+      - name: Build iOS app
+        run: |
+          cd ios
+          xcodebuild -workspace YourApp.xcworkspace \
+            -scheme YourApp \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.2' \
+            clean build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            ONLY_ACTIVE_ARCH=YES
+      
+      - name: Run iOS tests
+        run: |
+          cd ios
+          xcodebuild test \
+            -workspace YourApp.xcworkspace \
+            -scheme YourApp \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.2' \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+      
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: ios/TestResults.xcresult
+
+  # Android Build and Test
+  android-build:
+    runs-on: ubuntu-latest
+    needs: [changes, lint-and-test]
+    if: ${{ needs.changes.outputs.android == 'true' }}
+    timeout-minutes: 45
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      # Cache Gradle dependencies
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Make Gradle executable
+        run: cd android && chmod +x ./gradlew
+      
+      - name: Run Android lint
+        run: cd android && ./gradlew lint
+      
+      - name: Build Android app
+        run: cd android && ./gradlew assembleDebug
+      
+      - name: Run Android unit tests
+        run: cd android && ./gradlew test
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+      
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-results
+          path: android/app/build/test-results
+
+  # Optional: Run instrumented tests on Android
+  android-instrumented-tests:
+    runs-on: macos-latest  # Needed for hardware acceleration
+    needs: [changes, android-build]
+    if: ${{ needs.changes.outputs.android == 'true' && github.event_name == 'push' }}
+    timeout-minutes: 30
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+      
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-29
+      
+      - name: Create AVD and generate snapshot for caching
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."
+      
+      - name: Run instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: cd android && ./gradlew connectedCheck
+
+  # Status check - ensures all required jobs pass
+  ci-status:
+    runs-on: ubuntu-latest
+    needs: [ios-build, android-build]
+    if: always()
+    steps:
+      - name: Check CI Status
+        run: |
+          if [[ "${{ needs.ios-build.result }}" == "failure" ]] || 
+             [[ "${{ needs.android-build.result }}" == "failure" ]]; then
+            echo "CI failed"
+            exit 1
+          fi
+          echo "CI passed successfully!"
