@@ -22,9 +22,10 @@ export default function TasksScreen() {
   const { tasks, loading, syncing, createTask, updateTask, deleteTask, syncNow } = useTaskContext()
   const [showAddModal, setShowAddModal] = useState(false)
   const [newTaskName, setNewTaskName] = useState('')
-  const [newTaskDueDate, setNewTaskDueDate] = useState<Date | null>(null)
+  const [newTaskStartTime, setNewTaskStartTime] = useState<Date | null>(null)
+  const [newTaskEndTime, setNewTaskEndTime] = useState<Date | null>(null)
   const [newTaskReminder, setNewTaskReminder] = useState<Date | null>(null)
-  const [showDatePicker, setShowDatePicker] = useState<'due' | 'reminder' | null>(null)
+  const [showDatePicker, setShowDatePicker] = useState<'start' | 'end' | 'reminder' | null>(null)
   const [lastSyncState, setLastSyncState] = useState(false)
 
   // Show sync completion message
@@ -58,13 +59,15 @@ export default function TasksScreen() {
 
     await createTask({
       name: newTaskName,
-      due_at: newTaskDueDate?.toISOString(),
+      start_time: newTaskStartTime?.toISOString(),
+      end_time: newTaskEndTime?.toISOString(),
       reminder_at: newTaskReminder?.toISOString(),
       status: 'pending',
     })
 
     setNewTaskName('')
-    setNewTaskDueDate(null)
+    setNewTaskStartTime(null)
+    setNewTaskEndTime(null)
     setNewTaskReminder(null)
     setShowAddModal(false)
   }
@@ -115,16 +118,20 @@ export default function TasksScreen() {
         </Text>
         
         <View style={styles.taskMeta}>
-          {item.due_at && (
+          {item.start_time && item.end_time && (
             <Text style={styles.taskMetaText}>
-              <FontAwesome name="calendar" size={12} color="#666" />
-              {' Due: ' + new Date(item.due_at).toLocaleDateString()}
+              <FontAwesome name="clock-o" size={12} color="#666" />
+              {' ' + new Date(item.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + 
+               ' - ' + new Date(item.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </Text>
           )}
           {item.reminder_at && (
             <Text style={styles.taskMetaText}>
               <FontAwesome name="bell" size={12} color="#666" />
-              {' Reminder: ' + new Date(item.reminder_at).toLocaleDateString()}
+              {' Reminder: ' + new Date(item.reminder_at).toLocaleString([], { 
+                dateStyle: 'short', 
+                timeStyle: 'short' 
+              })}
             </Text>
           )}
           {item.sync_status === 'pending' && (
@@ -214,13 +221,25 @@ export default function TasksScreen() {
 
             <TouchableOpacity
               style={styles.dateButton}
-              onPress={() => setShowDatePicker('due')}
+              onPress={() => setShowDatePicker('start')}
             >
               <FontAwesome name="calendar" size={16} color="#666" />
               <Text style={styles.dateButtonText}>
-                {newTaskDueDate 
-                  ? `Due: ${newTaskDueDate.toLocaleDateString()}`
-                  : 'Set due date'}
+                {newTaskStartTime 
+                  ? `Start: ${newTaskStartTime.toLocaleString()}`
+                  : 'Set start time'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() => setShowDatePicker('end')}
+            >
+              <FontAwesome name="calendar-check-o" size={16} color="#666" />
+              <Text style={styles.dateButtonText}>
+                {newTaskEndTime 
+                  ? `End: ${newTaskEndTime.toLocaleString()}`
+                  : 'Set end time'}
               </Text>
             </TouchableOpacity>
 
@@ -231,7 +250,7 @@ export default function TasksScreen() {
               <FontAwesome name="bell" size={16} color="#666" />
               <Text style={styles.dateButtonText}>
                 {newTaskReminder 
-                  ? `Reminder: ${newTaskReminder.toLocaleDateString()}`
+                  ? `Reminder: ${newTaskReminder.toLocaleString()}`
                   : 'Set reminder'}
               </Text>
             </TouchableOpacity>
@@ -241,16 +260,20 @@ export default function TasksScreen() {
               <View style={styles.datePickerContainer}>
                 <DateTimePicker
                   value={
-                    showDatePicker === 'due' 
-                      ? newTaskDueDate || new Date()
+                    showDatePicker === 'start' 
+                      ? newTaskStartTime || new Date()
+                      : showDatePicker === 'end'
+                      ? newTaskEndTime || new Date()
                       : newTaskReminder || new Date()
                   }
                   mode="datetime"
                   display="spinner"
                   onChange={(event, date) => {
                     if (date) {
-                      if (showDatePicker === 'due') {
-                        setNewTaskDueDate(date)
+                      if (showDatePicker === 'start') {
+                        setNewTaskStartTime(date)
+                      } else if (showDatePicker === 'end') {
+                        setNewTaskEndTime(date)
                       } else {
                         setNewTaskReminder(date)
                       }
@@ -289,8 +312,10 @@ export default function TasksScreen() {
       {showDatePicker && Platform.OS === 'android' && (
         <DateTimePicker
           value={
-            showDatePicker === 'due' 
-              ? newTaskDueDate || new Date()
+            showDatePicker === 'start' 
+              ? newTaskStartTime || new Date()
+              : showDatePicker === 'end'
+              ? newTaskEndTime || new Date()
               : newTaskReminder || new Date()
           }
           mode="datetime"
@@ -298,8 +323,10 @@ export default function TasksScreen() {
           onChange={(event, date) => {
             setShowDatePicker(null)
             if (date) {
-              if (showDatePicker === 'due') {
-                setNewTaskDueDate(date)
+              if (showDatePicker === 'start') {
+                setNewTaskStartTime(date)
+              } else if (showDatePicker === 'end') {
+                setNewTaskEndTime(date)
               } else {
                 setNewTaskReminder(date)
               }

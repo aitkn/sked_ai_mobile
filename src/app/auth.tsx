@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Alert,
   StyleSheet,
@@ -18,6 +18,19 @@ import { useRouter } from 'expo-router'
 import { makeRedirectUri } from 'expo-auth-session'
 import * as WebBrowser from 'expo-web-browser'
 import { FontAwesome } from '@expo/vector-icons'
+// Conditionally import Google Sign-In to avoid errors in Expo Go
+let GoogleSignin: any;
+let GoogleSigninButton: any;
+let statusCodes: any;
+
+try {
+  const googleSignIn = require('@react-native-google-signin/google-signin');
+  GoogleSignin = googleSignIn.GoogleSignin;
+  GoogleSigninButton = googleSignIn.GoogleSigninButton;
+  statusCodes = googleSignIn.statusCodes;
+} catch (error) {
+  console.log('Google Sign-In not available - using web OAuth flow');
+}
 
 WebBrowser.maybeCompleteAuthSession()
 
@@ -36,6 +49,23 @@ export default function Auth() {
   // For debugging - show the redirect URI
   console.log('Redirect URI:', redirectTo)
   console.log('Platform:', Platform.OS)
+
+  // Configure Google Sign-In if available
+  useEffect(() => {
+    // Skip Google Sign-In configuration on web or if not available
+    if (Platform.OS === 'web' || !GoogleSignin) return
+
+    try {
+      GoogleSignin.configure({
+        scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
+        webClientId: '434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq.apps.googleusercontent.com', // TODO: Replace with your actual web client ID from Google Console
+        offlineAccess: true,
+        forceCodeForRefreshToken: true,
+      })
+    } catch (error) {
+      console.log('Error configuring Google Sign-In:', error)
+    }
+  }, [])
 
   async function signInWithEmail() {
     setLoading(true)
@@ -104,15 +134,71 @@ export default function Auth() {
     setLoading(false)
   }
 
+  async function signInWithGoogle() {
+    // Use native Google Sign-In for mobile platforms if available
+    if (Platform.OS !== 'web' && GoogleSignin) {
+      setLoading(true)
+      try {
+        // Check if Google Play Services are available
+        await GoogleSignin.hasPlayServices()
+        
+        // Sign in with Google
+        const userInfo = await GoogleSignin.signIn()
+        console.log('Google sign-in response:', userInfo)
+        
+        if (userInfo.data?.idToken) {
+          // Sign in with Supabase using the ID token
+          const { data, error } = await supabase.auth.signInWithIdToken({
+            provider: 'google',
+            token: userInfo.data.idToken,
+          })
+          
+          if (error) {
+            console.error('Supabase auth error:', error)
+            throw error
+          }
+          
+          console.log('Successfully authenticated with Supabase')
+          // The auth state listener in _layout.tsx will handle navigation
+        } else {
+          throw new Error('No ID token received from Google')
+        }
+      } catch (error: any) {
+        console.error('Google sign-in error:', error)
+        
+        if (error.code === statusCodes?.SIGN_IN_CANCELLED) {
+          console.log('User cancelled the login flow')
+        } else if (error.code === statusCodes?.IN_PROGRESS) {
+          Alert.alert('Sign In In Progress', 'Please wait for the current sign-in to complete')
+        } else if (error.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
+          Alert.alert('Google Play Services Error', 'Google Play Services are not available or outdated')
+        } else {
+          Alert.alert(
+            'Google Sign In Failed',
+            error.message || 'An error occurred during Google sign-in',
+            [
+              { text: 'OK' },
+              { text: 'Try Again', onPress: signInWithGoogle }
+            ]
+          )
+        }
+      }
+      setLoading(false)
+    } else {
+      // Fall back to OAuth flow for web or Expo Go
+      signInWithProvider('google')
+    }
+  }
+
   async function signInWithProvider(provider: 'google' | 'apple') {
     setLoading(true)
     try {
-      // Create the OAuth session
+      // This is now mainly used for web and Apple sign-in
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo: redirectTo,
-          skipBrowserRedirect: true,
+          skipBrowserRedirect: Platform.OS !== 'web',
         },
       })
       
@@ -124,11 +210,7 @@ export default function Auth() {
         return
       }
       
-      // Log the OAuth URL to debug
-      console.log('OAuth URL:', data?.url)
-      console.log('Expected redirect:', redirectTo)
-      
-      // On mobile, use WebBrowser
+      // On mobile, use WebBrowser (for Apple sign-in)
       const res = await WebBrowser.openAuthSessionAsync(
         data?.url ?? '',
         redirectTo,
@@ -138,13 +220,8 @@ export default function Auth() {
         }
       )
       
-      console.log('WebBrowser result:', res)
-      
       if (res.type === 'success') {
         const { url } = res
-        console.log('OAuth callback URL:', url)
-        
-        // Create URL object to parse the response
         const responseUrl = new URL(url)
         
         // Check for error in response
@@ -154,65 +231,34 @@ export default function Auth() {
           throw new Error(errorDescription || error)
         }
         
-        // Handle the different OAuth response types
+        // Handle the OAuth response
         if (responseUrl.hash) {
-          // Implicit flow - tokens in hash
           const hashParams = new URLSearchParams(responseUrl.hash.substring(1))
           const access_token = hashParams.get('access_token')
           const refresh_token = hashParams.get('refresh_token')
           
           if (access_token) {
-            console.log('Setting session with access token')
-            const { error: sessionError } = await supabase.auth.setSession({
+            await supabase.auth.setSession({
               access_token,
               refresh_token: refresh_token || '',
             })
-            
-            if (sessionError) {
-              console.error('Error setting session:', sessionError)
-              throw sessionError
-            }
-            
-            console.log('Session set successfully')
-            // The auth state listener in _layout.tsx will handle navigation
           }
         } else if (responseUrl.searchParams.get('code')) {
-          // Authorization code flow
           const code = responseUrl.searchParams.get('code')
-          console.log('Exchanging code for session')
-          
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code!)
-          
-          if (exchangeError) {
-            console.error('Error exchanging code:', exchangeError)
-            throw exchangeError
-          }
-          
-          console.log('Code exchanged successfully')
-          // The auth state listener in _layout.tsx will handle navigation
+          await supabase.auth.exchangeCodeForSession(code!)
         }
-      } else if (res.type === 'cancel') {
-        console.log('User cancelled OAuth flow')
       }
     } catch (error: any) {
-      console.error('OAuth error:', error)
       const providerName = provider.charAt(0).toUpperCase() + provider.slice(1)
       Alert.alert(
         `${providerName} Sign In Failed`,
         error.message || `Failed to sign in with ${providerName}`,
-        [
-          { text: 'OK' },
-          { 
-            text: 'Try Again', 
-            onPress: () => signInWithProvider(provider) 
-          }
-        ]
+        [{ text: 'OK' }]
       )
     }
     setLoading(false)
   }
 
-  const signInWithGoogle = () => signInWithProvider('google')
   const signInWithApple = () => signInWithProvider('apple')
 
   return (
@@ -266,14 +312,26 @@ export default function Auth() {
             <View style={styles.divider} />
           </View>
           
-          <TouchableOpacity
-            style={[styles.button, styles.socialButton]}
-            onPress={signInWithGoogle}
-            disabled={loading}
-          >
-            <FontAwesome name="google" size={20} color="#DB4437" style={styles.socialIcon} />
-            <Text style={styles.socialButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
+          {Platform.OS !== 'web' && GoogleSigninButton ? (
+            <View style={styles.googleButtonContainer}>
+              <GoogleSigninButton
+                style={styles.googleButton}
+                size={GoogleSigninButton.Size.Wide}
+                color={GoogleSigninButton.Color.Dark}
+                onPress={signInWithGoogle}
+                disabled={loading}
+              />
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.button, styles.socialButton]}
+              onPress={signInWithGoogle}
+              disabled={loading}
+            >
+              <FontAwesome name="google" size={20} color="#DB4437" style={styles.socialIcon} />
+              <Text style={styles.socialButtonText}>Continue with Google</Text>
+            </TouchableOpacity>
+          )}
           
           {Platform.OS === 'ios' && (
             <TouchableOpacity
@@ -510,5 +568,13 @@ const styles = StyleSheet.create({
     color: '#333',
     fontSize: 16,
     fontWeight: '500',
+  },
+  googleButtonContainer: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  googleButton: {
+    width: '100%',
+    height: 48,
   },
 })
