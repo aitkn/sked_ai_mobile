@@ -1,0 +1,211 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
+// Internal task structure for local storage
+export interface InternalTask {
+  id: string
+  name: string
+  start_time: string // ISO string
+  end_time: string   // ISO string
+  duration: number   // duration in seconds
+  created_at: string // ISO string
+  updated_at: string // ISO string
+}
+
+const STORAGE_KEY = 'internal_tasks'
+
+export class InternalDB {
+  private static instance: InternalDB
+  private tasks: InternalTask[] = []
+  private loaded = false
+
+  static getInstance(): InternalDB {
+    if (!InternalDB.instance) {
+      InternalDB.instance = new InternalDB()
+    }
+    return InternalDB.instance
+  }
+
+  private constructor() {}
+
+  // Load tasks from AsyncStorage
+  async loadTasks(): Promise<InternalTask[]> {
+    if (this.loaded) {
+      return this.tasks
+    }
+
+    try {
+      const stored = await AsyncStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        this.tasks = JSON.parse(stored)
+        console.log('📱 Loaded', this.tasks.length, 'tasks from internal DB')
+      } else {
+        this.tasks = []
+        console.log('📱 No tasks found in internal DB, starting fresh')
+      }
+      this.loaded = true
+      return this.tasks
+    } catch (error) {
+      console.error('❌ Error loading tasks from internal DB:', error)
+      this.tasks = []
+      this.loaded = true
+      return this.tasks
+    }
+  }
+
+  // Save tasks to AsyncStorage
+  private async saveTasks(): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(this.tasks))
+      console.log('💾 Saved', this.tasks.length, 'tasks to internal DB')
+    } catch (error) {
+      console.error('❌ Error saving tasks to internal DB:', error)
+    }
+  }
+
+  // Get all tasks
+  async getAllTasks(): Promise<InternalTask[]> {
+    await this.loadTasks()
+    return [...this.tasks] // Return copy
+  }
+
+  // Get task by ID
+  async getTaskById(id: string): Promise<InternalTask | null> {
+    await this.loadTasks()
+    return this.tasks.find(task => task.id === id) || null
+  }
+
+  // Add a new task
+  async addTask(taskData: Omit<InternalTask, 'id' | 'created_at' | 'updated_at'>): Promise<InternalTask> {
+    await this.loadTasks()
+    
+    const now = new Date().toISOString()
+    const newTask: InternalTask = {
+      id: `internal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      ...taskData,
+      created_at: now,
+      updated_at: now,
+    }
+
+    this.tasks.push(newTask)
+    await this.saveTasks()
+    
+    console.log('➕ Added task to internal DB:', newTask.name)
+    return newTask
+  }
+
+  // Update a task
+  async updateTask(id: string, updates: Partial<Omit<InternalTask, 'id' | 'created_at'>>): Promise<InternalTask | null> {
+    await this.loadTasks()
+    
+    const taskIndex = this.tasks.findIndex(task => task.id === id)
+    if (taskIndex === -1) {
+      console.warn('⚠️ Task not found for update:', id)
+      return null
+    }
+
+    const updatedTask = {
+      ...this.tasks[taskIndex],
+      ...updates,
+      updated_at: new Date().toISOString(),
+    }
+
+    this.tasks[taskIndex] = updatedTask
+    await this.saveTasks()
+    
+    console.log('📝 Updated task in internal DB:', updatedTask.name)
+    return updatedTask
+  }
+
+  // Delete a task
+  async deleteTask(id: string): Promise<boolean> {
+    await this.loadTasks()
+    
+    const taskIndex = this.tasks.findIndex(task => task.id === id)
+    if (taskIndex === -1) {
+      console.warn('⚠️ Task not found for deletion:', id)
+      return false
+    }
+
+    const deletedTask = this.tasks.splice(taskIndex, 1)[0]
+    await this.saveTasks()
+    
+    console.log('🗑️ Deleted task from internal DB:', deletedTask.name)
+    return true
+  }
+
+  // Clear all tasks
+  async clearAllTasks(): Promise<void> {
+    this.tasks = []
+    await this.saveTasks()
+    console.log('🧹 Cleared all tasks from internal DB')
+  }
+
+  // Get tasks within a time range
+  async getTasksInRange(startTime: Date, endTime: Date): Promise<InternalTask[]> {
+    await this.loadTasks()
+    
+    const startMs = startTime.getTime()
+    const endMs = endTime.getTime()
+    
+    return this.tasks.filter(task => {
+      const taskStartMs = new Date(task.start_time).getTime()
+      const taskEndMs = new Date(task.end_time).getTime()
+      
+      // Task overlaps with the range if:
+      // - Task starts before range ends AND task ends after range starts
+      return taskStartMs < endMs && taskEndMs > startMs
+    })
+  }
+
+  // Get current active task
+  async getCurrentTask(): Promise<InternalTask | null> {
+    await this.loadTasks()
+    
+    const now = new Date().getTime()
+    
+    return this.tasks.find(task => {
+      const taskStartMs = new Date(task.start_time).getTime()
+      const taskEndMs = new Date(task.end_time).getTime()
+      return now >= taskStartMs && now < taskEndMs
+    }) || null
+  }
+
+  // Get next upcoming task
+  async getNextTask(): Promise<InternalTask | null> {
+    await this.loadTasks()
+    
+    const now = new Date().getTime()
+    
+    const upcomingTasks = this.tasks
+      .filter(task => new Date(task.start_time).getTime() > now)
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+    
+    return upcomingTasks[0] || null
+  }
+
+  // Helper function to calculate duration from start and end times
+  static calculateDuration(startTime: string, endTime: string): number {
+    const startMs = new Date(startTime).getTime()
+    const endMs = new Date(endTime).getTime()
+    return Math.max(0, Math.floor((endMs - startMs) / 1000)) // duration in seconds
+  }
+
+  // Helper function to create task with auto-calculated duration
+  async addTaskWithDuration(
+    name: string, 
+    startTime: string, 
+    endTime: string
+  ): Promise<InternalTask> {
+    const duration = InternalDB.calculateDuration(startTime, endTime)
+    
+    return this.addTask({
+      name,
+      start_time: startTime,
+      end_time: endTime,
+      duration,
+    })
+  }
+}
+
+// Export singleton instance
+export const internalDB = InternalDB.getInstance()
