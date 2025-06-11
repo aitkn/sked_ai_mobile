@@ -7,6 +7,8 @@ export interface InternalTask {
   start_time: string // ISO string
   end_time: string   // ISO string
   duration: number   // duration in seconds
+  status: 'pending' | 'in_progress' | 'completed' // task status
+  completed_at?: string // ISO string, optional
   created_at: string // ISO string
   updated_at: string // ISO string
 }
@@ -203,6 +205,7 @@ export class InternalDB {
       start_time: startTime,
       end_time: endTime,
       duration,
+      status: 'pending',
     })
   }
 }

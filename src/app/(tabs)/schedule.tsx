@@ -12,7 +12,6 @@ import {
   Platform,
 } from 'react-native'
 import { Text } from '@/components/Themed'
-import { useTaskContext } from '@/contexts/TaskContext'
 import { Task } from '@/lib/offline/database'
 import Colors from '@/constants/Colors'
 import { FontAwesome } from '@expo/vector-icons'
@@ -41,9 +40,10 @@ const convertInternalTaskToTask = (internalTask: InternalTask): Task => ({
   local_id: internalTask.id,
   user_id: 'internal_user',
   name: internalTask.name,
-  status: 'pending',
+  status: internalTask.status as any, // Convert to Task status type
   start_time: internalTask.start_time,
   end_time: internalTask.end_time,
+  completed_at: internalTask.completed_at,
   priority: 'medium',
   sync_status: 'synced',
   created_at: internalTask.created_at,
@@ -51,8 +51,6 @@ const convertInternalTaskToTask = (internalTask: InternalTask): Task => ({
 })
 
 export default function ScheduleScreen() {
-  const { tasks: supabaseTasks, loading, updateTask, syncNow } = useTaskContext()
-  const [useSupabase, setUseSupabase] = useState(true)
   const [autoStart, setAutoStart] = useState(true)
   const [currentTime, setCurrentTime] = useState(new Date())
   const [internalTasks, setInternalTasks] = useState<Task[]>([])
@@ -76,15 +74,13 @@ export default function ScheduleScreen() {
   const timerRef = useRef<NodeJS.Timeout | number | null>(null)
   const expoNotificationService = useRef(new ExpoNotificationService()).current
 
-  // Load internal tasks when component mounts or when switching to sample mode
+  // Load internal tasks when component mounts
   useEffect(() => {
-    if (!useSupabase) {
-      loadInternalTasks()
-      // Refresh internal tasks every 5 seconds when in sample mode
-      const interval = setInterval(loadInternalTasks, 5000)
-      return () => clearInterval(interval)
-    }
-  }, [useSupabase])
+    loadInternalTasks()
+    // Refresh internal tasks every 5 seconds
+    const interval = setInterval(loadInternalTasks, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   const loadInternalTasks = async () => {
     try {
@@ -106,12 +102,110 @@ export default function ScheduleScreen() {
       console.error('Failed to initialize Expo notifications:', error)
     })
 
+    // Set up notification categories with action buttons
+    const setupNotificationCategories = async () => {
+      try {
+        // Test notification category
+        await Notifications.setNotificationCategoryAsync('test_notification', [
+          {
+            identifier: 'open_app',
+            buttonTitle: 'Take me back to the app',
+            options: {
+              opensAppToForeground: true,
+            },
+          },
+          {
+            identifier: 'ok_action',
+            buttonTitle: 'OK',
+            options: {
+              opensAppToForeground: false,
+            },
+          },
+        ])
+
+        // Task start notification category
+        await Notifications.setNotificationCategoryAsync('task_start', [
+          {
+            identifier: 'start_task',
+            buttonTitle: 'Start Task',
+            options: {
+              opensAppToForeground: true,
+            },
+          },
+          {
+            identifier: 'dismiss',
+            buttonTitle: 'Dismiss',
+            options: {
+              opensAppToForeground: false,
+            },
+          },
+        ])
+
+        // Task completion notification category
+        await Notifications.setNotificationCategoryAsync('task_complete', [
+          {
+            identifier: 'complete_task',
+            buttonTitle: 'Mark Complete',
+            options: {
+              opensAppToForeground: true,
+            },
+          },
+          {
+            identifier: 'keep_running',
+            buttonTitle: 'Keep Running',
+            options: {
+              opensAppToForeground: false,
+            },
+          },
+        ])
+        console.log('Notification categories set up successfully')
+      } catch (error) {
+        console.error('Failed to set up notification categories:', error)
+      }
+    }
+
+    setupNotificationCategories()
+
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('Notification tapped:', response.notification.request.content)
-      Alert.alert(
-        'Notification Tapped!', 
-        `You tapped: ${response.notification.request.content.title}\\n\\nThis proves notifications are working!`
-      )
+      console.log('Notification interaction:', response)
+      console.log('Action identifier:', response.actionIdentifier)
+      console.log('Notification content:', response.notification.request.content)
+      
+      const actionIdentifier = response.actionIdentifier
+      const notificationTitle = response.notification.request.content.title
+      
+      if (actionIdentifier === 'open_app') {
+        Alert.alert(
+          'Welcome Back!',
+          `You used "Take me back to the app" from "${notificationTitle}"\n\nNotifications are working perfectly!`
+        )
+      } else if (actionIdentifier === 'ok_action') {
+        // User tapped OK - just log it, don't show alert since app might be backgrounded
+        console.log(`User tapped OK on notification: ${notificationTitle}`)
+      } else if (actionIdentifier === 'start_task') {
+        const taskId = response.notification.request.content.data?.taskId
+        Alert.alert(
+          'Start Task Action',
+          `You pressed "Start Task" from the notification!\n\nTask ID: ${taskId}\n\nIn a full implementation, this would start the task automatically.`,
+          [{ text: 'OK' }]
+        )
+      } else if (actionIdentifier === 'complete_task') {
+        const taskId = response.notification.request.content.data?.taskId
+        Alert.alert(
+          'Complete Task Action',
+          `You pressed "Mark Complete" from the notification!\n\nTask ID: ${taskId}\n\nIn a full implementation, this would mark the task as complete.`,
+          [{ text: 'OK' }]
+        )
+      } else if (actionIdentifier === 'dismiss' || actionIdentifier === 'keep_running') {
+        // User dismissed or chose to keep running - just log it
+        console.log(`User chose ${actionIdentifier} for notification: ${notificationTitle}`)
+      } else {
+        // Default tap (on notification body)
+        Alert.alert(
+          'Notification Tapped!', 
+          `You tapped: ${notificationTitle}\n\nThis proves notifications are working!`
+        )
+      }
     })
 
     return () => subscription.remove()
@@ -142,8 +236,8 @@ export default function ScheduleScreen() {
   }, [])
 
 
-  // Get tasks based on mode
-  const tasks = useSupabase ? supabaseTasks : (internalTasks.length > 0 ? internalTasks : sampleTasks)
+  // Always use internal DB, fallback to sample tasks if empty
+  const tasks = internalTasks.length > 0 ? internalTasks : sampleTasks
 
   // Sort tasks by start time
   const sortedTasks = [...tasks]
@@ -202,10 +296,19 @@ export default function ScheduleScreen() {
 
   // Check if a task should be started now
   const shouldTaskStartNow = (task: Task) => {
-    if (!task.start_time) return false
+    if (!task.start_time || !task.end_time) return false
     const now = currentTime.getTime()
     const taskStart = new Date(task.start_time).getTime()
-    return taskStart <= now && task.status !== 'in_progress' && task.status !== 'completed'
+    const taskEnd = new Date(task.end_time).getTime()
+    
+    // Task should not be startable if:
+    // 1. It hasn't reached start time yet
+    // 2. It's already past end time (task window has passed)
+    // 3. It's already in progress or completed
+    if (taskStart > now || taskEnd <= now) return false
+    if (task.status === 'in_progress' || task.status === 'completed') return false
+    
+    return taskStart <= now
   }
 
   // Calculate time until next task
@@ -353,14 +456,18 @@ export default function ScheduleScreen() {
               
               // Auto-start the task immediately
               setTimeout(async () => {
-                if (useSupabase) {
-                  await updateTask(nextTask.local_id, { status: 'in_progress' })
-                } else if (nextTask.user_id === 'internal_user') {
-                  setInternalTasks(prev => prev.map(t => 
-                    t.local_id === nextTask.local_id 
-                      ? { ...t, status: 'in_progress' }
-                      : t
-                  ))
+                if (nextTask.user_id === 'internal_user') {
+                  try {
+                    await internalDB.updateTask(nextTask.local_id, { status: 'in_progress' })
+                    setInternalTasks(prev => prev.map(t => 
+                      t.local_id === nextTask.local_id 
+                        ? { ...t, status: 'in_progress' }
+                        : t
+                    ))
+                    console.log(`✅ Auto-started task: ${nextTask.name}`)
+                  } catch (error) {
+                    console.error('❌ Error auto-starting task:', error)
+                  }
                 }
               }, 100)
               
@@ -374,14 +481,18 @@ export default function ScheduleScreen() {
                     text: 'Start Task',
                     onPress: async () => {
                       // Manually start the task
-                      if (useSupabase) {
-                        await updateTask(nextTask.local_id, { status: 'in_progress' })
-                      } else if (nextTask.user_id === 'internal_user') {
-                        setInternalTasks(prev => prev.map(t => 
-                          t.local_id === nextTask.local_id 
-                            ? { ...t, status: 'in_progress' }
-                            : t
-                        ))
+                      if (nextTask.user_id === 'internal_user') {
+                        try {
+                          await internalDB.updateTask(nextTask.local_id, { status: 'in_progress' })
+                          setInternalTasks(prev => prev.map(t => 
+                            t.local_id === nextTask.local_id 
+                              ? { ...t, status: 'in_progress' }
+                              : t
+                          ))
+                          console.log(`✅ Manually started task: ${nextTask.name}`)
+                        } catch (error) {
+                          console.error('❌ Error manually starting task:', error)
+                        }
                       }
                     },
                   },
@@ -408,6 +519,7 @@ export default function ScheduleScreen() {
                     title: `Time to Start: ${nextTask.name}`,
                     body: 'Your scheduled task is ready to begin!',
                     data: { taskId: nextTask.local_id, type: 'task_start' },
+                    categoryIdentifier: 'task_start',
                   },
                   trigger: null, // Immediate
                 })
@@ -446,6 +558,7 @@ export default function ScheduleScreen() {
                       title: `Auto-Completed: ${currentTask.name}`,
                       body: 'Your task time ended and was automatically marked as complete.',
                       data: { taskId: currentTask.local_id, type: 'auto_complete' },
+                      categoryIdentifier: 'task_complete',
                     },
                     trigger: null,
                   })
@@ -457,17 +570,25 @@ export default function ScheduleScreen() {
             }
             
             // Mark task as completed automatically
-            if (useSupabase) {
-              updateTask(currentTask.local_id, { 
-                status: 'completed',
-                completed_at: new Date().toISOString()
-              }).catch(error => console.error('Error completing task:', error))
-            } else if (currentTask.user_id === 'internal_user') {
-              setInternalTasks(prev => prev.map(t => 
-                t.local_id === currentTask.local_id 
-                  ? { ...t, status: 'completed', completed_at: new Date().toISOString() }
-                  : t
-              ))
+            if (currentTask.user_id === 'internal_user') {
+              const completeTask = async () => {
+                try {
+                  const completedAt = new Date().toISOString()
+                  await internalDB.updateTask(currentTask.local_id, { 
+                    status: 'completed', 
+                    completed_at: completedAt 
+                  })
+                  setInternalTasks(prev => prev.map(t => 
+                    t.local_id === currentTask.local_id 
+                      ? { ...t, status: 'completed', completed_at: completedAt }
+                      : t
+                  ))
+                  console.log(`✅ Auto-completed task: ${currentTask.name}`)
+                } catch (error) {
+                  console.error('❌ Error auto-completing task:', error)
+                }
+              }
+              completeTask()
             }
           } else {
             // Manual mode - show alert to complete task if app is active, notification if backgrounded
@@ -479,17 +600,22 @@ export default function ScheduleScreen() {
                   {
                     text: 'Complete Task',
                     onPress: async () => {
-                      if (useSupabase) {
-                        await updateTask(currentTask.local_id, { 
-                          status: 'completed',
-                          completed_at: new Date().toISOString()
-                        })
-                      } else if (currentTask.user_id === 'internal_user') {
-                        setInternalTasks(prev => prev.map(t => 
-                          t.local_id === currentTask.local_id 
-                            ? { ...t, status: 'completed', completed_at: new Date().toISOString() }
-                            : t
-                        ))
+                      if (currentTask.user_id === 'internal_user') {
+                        try {
+                          const completedAt = new Date().toISOString()
+                          await internalDB.updateTask(currentTask.local_id, { 
+                            status: 'completed', 
+                            completed_at: completedAt 
+                          })
+                          setInternalTasks(prev => prev.map(t => 
+                            t.local_id === currentTask.local_id 
+                              ? { ...t, status: 'completed', completed_at: completedAt }
+                              : t
+                          ))
+                          console.log(`✅ Manually completed task: ${currentTask.name}`)
+                        } catch (error) {
+                          console.error('❌ Error manually completing task:', error)
+                        }
                       }
                     },
                   },
@@ -512,6 +638,7 @@ export default function ScheduleScreen() {
                       title: `Task Completed: ${currentTask.name}`,
                       body: 'Your scheduled task time has ended. Tap to mark as complete or continue.',
                       data: { taskId: currentTask.local_id, type: 'task_complete' },
+                      categoryIdentifier: 'task_complete',
                     },
                     trigger: null, // Immediate
                   })
@@ -525,22 +652,26 @@ export default function ScheduleScreen() {
         }
       }
     }
-  }, [currentTask, nextTask, currentTime, appState, autoStart, useSupabase, updateTask, alertedTasks])
+  }, [currentTask, nextTask, currentTime, appState, autoStart, alertedTasks])
 
   const handleStartTask = async (task: Task) => {
-    if (useSupabase) {
-      await updateTask(task.local_id, { status: 'in_progress' })
-    } else {
-      // Update internal task status if it's from internal DB
-      if (task.user_id === 'internal_user') {
+    // Update internal task status if it's from internal DB
+    if (task.user_id === 'internal_user') {
+      try {
+        // Update in AsyncStorage first
+        await internalDB.updateTask(task.local_id, { status: 'in_progress' })
+        // Then update local state
         setInternalTasks(prev => prev.map(t => 
           t.local_id === task.local_id 
             ? { ...t, status: 'in_progress' }
             : t
         ))
+        console.log(`✅ Started task: ${task.name}`)
+      } catch (error) {
+        console.error('❌ Error starting task:', error)
       }
-      // Note: sampleTasks are static and don't need updates
     }
+    // Note: sampleTasks are static and don't need updates
   }
 
   return (
@@ -561,65 +692,6 @@ export default function ScheduleScreen() {
           </View>
         </View>
         <View style={styles.headerRight}>
-          {/* Force task start notification test */}
-          <TouchableOpacity
-            style={[styles.testButton, { backgroundColor: '#FF6B35' }]}
-            onPress={async () => {
-              try {
-                console.log('📱 Force testing task start notification...')
-                const testTaskName = nextTask?.name || 'Test Task'
-                
-                console.log('📱 Current app state:', appState)
-                console.log('📱 Sending notification...')
-                
-                const result = await Notifications.scheduleNotificationAsync({
-                  content: {
-                    title: `Time to Start: ${testTaskName}`,
-                    body: 'Your scheduled task is ready to begin! (Forced test)',
-                    data: { type: 'force_task_start', timestamp: Date.now() },
-                  },
-                  trigger: null, // Immediate
-                })
-                
-                console.log('📱 Notification result:', result)
-                Alert.alert('🚀 Notification Sent!', `Check your notification panel for "${testTaskName}"`)
-              } catch (error: any) {
-                console.error('❌ Notification error:', error)
-                Alert.alert('❌ Failed', `Error: ${error.message}`)
-              }
-            }}
-          >
-            <FontAwesome name="rocket" size={14} color="#fff" />
-          </TouchableOpacity>
-          
-          {/* Force task completion notification test */}
-          <TouchableOpacity
-            style={[styles.testButton, { backgroundColor: '#9B59B6' }]}
-            onPress={async () => {
-              try {
-                console.log('📱 Force testing task completion notification...')
-                const testTaskName = currentTask?.name || 'Test Task'
-                
-                const result = await Notifications.scheduleNotificationAsync({
-                  content: {
-                    title: `Task Completed: ${testTaskName}`,
-                    body: 'Your task time has ended. (Forced test)',
-                    data: { type: 'force_task_complete', timestamp: Date.now() },
-                  },
-                  trigger: null,
-                })
-                
-                console.log('📱 Completion notification result:', result)
-                Alert.alert('🚀 Completion Sent!', `Check your notification panel for "${testTaskName}"`)
-              } catch (error: any) {
-                console.error('❌ Completion notification error:', error)
-                Alert.alert('❌ Failed', `Error: ${error.message}`)
-              }
-            }}
-          >
-            <FontAwesome name="check" size={14} color="#fff" />
-          </TouchableOpacity>
-          
           <TouchableOpacity
             style={styles.testButton}
             onPress={async () => {
@@ -642,6 +714,7 @@ export default function ScheduleScreen() {
                     title: 'Immediate Test',
                     body: 'This notification appeared instantly!',
                     data: { type: 'immediate' },
+                    categoryIdentifier: 'test_notification',
                   },
                   trigger: null, // Immediate
                 })
@@ -664,6 +737,7 @@ export default function ScheduleScreen() {
                                 title: '⏰ Scheduled Test',
                                 body: 'This notification was sent after 10 seconds!',
                                 data: { type: 'scheduled_test' },
+                                categoryIdentifier: 'test_notification',
                               },
                               trigger: null, // Immediate
                             })
@@ -688,18 +762,6 @@ export default function ScheduleScreen() {
           >
             <FontAwesome name="bell" size={16} color="#fff" />
           </TouchableOpacity>
-          
-          <View style={styles.devToggle}>
-            <Text style={styles.devToggleText}>
-              {useSupabase ? 'Supabase' : 'Sample'}
-            </Text>
-            <Switch
-              value={useSupabase}
-              onValueChange={setUseSupabase}
-              trackColor={{ false: '#767577', true: Colors.light.tint }}
-              thumbColor="#f4f3f4"
-            />
-          </View>
         </View>
       </View>
 
@@ -708,8 +770,8 @@ export default function ScheduleScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl 
-            refreshing={loading && useSupabase} 
-            onRefresh={useSupabase ? syncNow : undefined} 
+            refreshing={false} 
+            onRefresh={loadInternalTasks} 
           />
         }
       >
@@ -719,7 +781,7 @@ export default function ScheduleScreen() {
           <Text style={styles.debugText}>App State: {appState}</Text>
           <Text style={styles.debugText}>Auto Start: {autoStart ? 'ON' : 'OFF'}</Text>
           <Text style={styles.debugText}>Time: {currentTime.toLocaleTimeString()}</Text>
-          <Text style={styles.debugText}>Data Source: {useSupabase ? 'Supabase' : internalTasks.length > 0 ? 'Internal DB' : 'Sample'}</Text>
+          <Text style={styles.debugText}>Data Source: {internalTasks.length > 0 ? 'Internal DB' : 'Sample'}</Text>
           <Text style={styles.debugText}>Tasks Count: {tasks.length}</Text>
           {nextTask && (
             <>
@@ -889,7 +951,7 @@ export default function ScheduleScreen() {
             <FontAwesome name="calendar-o" size={60} color="#ccc" />
             <Text style={styles.emptyText}>No scheduled tasks</Text>
             <Text style={styles.emptySubtext}>
-              {useSupabase ? 'Add tasks with start/end times' : 'No sample tasks available'}
+              Use the Dev tab to add test tasks
             </Text>
           </View>
         )}
@@ -936,15 +998,6 @@ const styles = StyleSheet.create({
   },
   smallSwitch: {
     transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
-  },
-  devToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  devToggleText: {
-    fontSize: 12,
-    color: '#666',
   },
   testButton: {
     backgroundColor: Colors.light.tint,
