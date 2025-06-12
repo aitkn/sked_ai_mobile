@@ -4,12 +4,9 @@ import {
   View,
   ScrollView,
   TouchableOpacity,
-  Switch,
   RefreshControl,
   Alert,
-  Dimensions,
   AppState,
-  Platform,
 } from 'react-native'
 import { Text } from '@/components/Themed'
 import { Task } from '@/lib/offline/database'
@@ -51,7 +48,6 @@ const convertInternalTaskToTask = (internalTask: InternalTask): Task => ({
 })
 
 export default function ScheduleScreen() {
-  const [autoStart, setAutoStart] = useState(true)
   const [currentTime, setCurrentTime] = useState(new Date())
   const [internalTasks, setInternalTasks] = useState<Task[]>([])
   const [sampleTasks] = useState<Task[]>([
@@ -249,20 +245,15 @@ export default function ScheduleScreen() {
       return aTime - bTime
     })
 
-  // Find current and next task
+  // Find current task (only manually started tasks)
   const currentTask = sortedTasks.find(task => {
     if (!task.start_time || !task.end_time) return false
     const startTime = new Date(task.start_time).getTime()
     const endTime = new Date(task.end_time).getTime()
     const now = currentTime.getTime()
     
-    // If autoStart is disabled, only consider manually started tasks as current
-    if (!autoStart) {
-      return task.status === 'in_progress' && now >= startTime && now < endTime
-    }
-    
-    // If autoStart is enabled, any task in its time window is current
-    return now >= startTime && now < endTime
+    // Only consider manually started tasks as current
+    return task.status === 'in_progress' && now >= startTime && now < endTime
   })
 
   const upcomingTasks = sortedTasks.filter(task => {
@@ -348,192 +339,74 @@ export default function ScheduleScreen() {
   const timeUntilNext = getTimeUntilNext()
   const currentTaskRemaining = getCurrentTaskRemaining()
 
-  // Check for task transitions and send notifications
+  // Check for task notifications (manual start only)
   useEffect(() => {
-    // Debug logging every second
-    console.log('🔍 Task transition check:', new Date().toLocaleTimeString())
-    console.log('- Next task:', nextTask?.name || 'none')
-    console.log('- Current task:', currentTask?.name || 'none')
-    console.log('- App state:', appState)
-    console.log('- Auto start:', autoStart)
-    console.log('- Alerted tasks:', Array.from(alertedTasks))
-    
-    if (nextTask) {
-      const now = currentTime.getTime()
-      const taskStart = new Date(nextTask.start_time!).getTime()
-      const timeUntilStart = (taskStart - now) / 1000
-      console.log('- Time until next task:', Math.round(timeUntilStart), 'seconds')
-    }
-    
-    // Check for upcoming task notifications (30 seconds before start)
+    // Send notifications when tasks are ready to start, but don't auto-start them
     if (nextTask && !currentTask) {
       const now = currentTime.getTime()
       const taskStart = new Date(nextTask.start_time!).getTime()
-      const timeUntilStart = (taskStart - now) / 1000
       
-      console.log('🕰 Time check:')
-      console.log('- Now:', new Date(now).toISOString())
-      console.log('- Task starts:', new Date(taskStart).toISOString())
-      console.log('- Time diff:', timeUntilStart, 'seconds')
-      
-      // Check 30-second warning conditions
-      console.log('🕰 30s warning check:')
-      console.log('- timeUntilStart <= 30:', timeUntilStart <= 30)
-      console.log('- timeUntilStart > 25:', timeUntilStart > 25)
-      console.log('- appState !== active:', appState !== 'active')
-      console.log('- appState value:', appState)
-      
-      // Send 30-second warning notification (test with shorter time for debugging)
-      if (timeUntilStart <= 15 && timeUntilStart > 10 && appState !== 'active') {
-        const warningKey = `${nextTask.local_id}_30s_warning`
-        console.log('🕰 Warning key:', warningKey)
-        console.log('🕰 Already alerted:', alertedTasks.has(warningKey))
-        
-        if (!alertedTasks.has(warningKey)) {
-          setAlertedTasks(prev => new Set(prev).add(warningKey))
-          console.log('⏰ SENDING 30-second warning notification...')
-          
-          setTimeout(async () => {
-            try {
-              const result = await Notifications.scheduleNotificationAsync({
-                content: {
-                  title: `Starting Soon: ${nextTask.name}`,
-                  body: `Your task starts in ${Math.ceil(timeUntilStart)} seconds`,
-                  data: { taskId: nextTask.local_id, type: 'task_warning' },
-                },
-                trigger: null,
-              })
-              console.log('✅ 30-second warning notification sent, result:', result)
-            } catch (error) {
-              console.error('❌ Warning notification failed:', error)
-            }
-          }, 100)
-        } else {
-          console.log('🕰 30s warning already sent for this task')
-        }
-      } else {
-        console.log('🕰 30s warning conditions not met')
-      }
-      
-      // Check task start conditions
-      console.log('🕰 Task start check:')
-      console.log('- taskStart <= now:', taskStart <= now)
-      console.log('- taskStart > now - 2000:', taskStart > now - 2000)
-      console.log('- Combined condition:', taskStart <= now && taskStart > now - 2000)
-      
-      // Task is starting now or has just started (within 5 seconds for easier testing)
+      // Task is ready to start (within 5 seconds of start time)
       if (taskStart <= now && taskStart > now - 5000) {
-        console.log('✅ Task should start now!')
-        console.log('🕰 Start alert key:', nextTask.local_id)
-        console.log('🕰 Already alerted for start:', alertedTasks.has(nextTask.local_id))
-        
-        // Only show alert once per task
+        // Only notify once per task
         if (!alertedTasks.has(nextTask.local_id)) {
           setAlertedTasks(prev => new Set(prev).add(nextTask.local_id))
           
           if (appState === 'active') {
-            // App is in foreground - show alert based on autostart setting
-            if (autoStart) {
-              // Autostart mode - automatically start and offer cancel option
-              Alert.alert(
-                'Auto-Starting Task!',
-                `"${nextTask.name}" is starting automatically...`,
-                [
-                  {
-                    text: 'Cancel Start',
-                    style: 'destructive',
-                    onPress: () => {
-                      console.log('User cancelled auto-start')
-                      // Don't start the task
-                    },
-                  },
-                  {
-                    text: 'OK',
-                    style: 'default',
-                  },
-                ]
-              )
-              
-              // Auto-start the task immediately
-              setTimeout(async () => {
-                if (nextTask.user_id === 'internal_user') {
-                  try {
-                    await internalDB.updateTask(nextTask.local_id, { status: 'in_progress' })
-                    setInternalTasks(prev => prev.map(t => 
-                      t.local_id === nextTask.local_id 
-                        ? { ...t, status: 'in_progress' }
-                        : t
-                    ))
-                    console.log(`✅ Auto-started task: ${nextTask.name}`)
-                  } catch (error) {
-                    console.error('❌ Error auto-starting task:', error)
-                  }
-                }
-              }, 100)
-              
-            } else {
-              // Manual mode - offer start option
-              Alert.alert(
-                'Time to Start!',
-                `It's time to start "${nextTask.name}"`,
-                [
-                  {
-                    text: 'Start Task',
-                    onPress: async () => {
-                      // Manually start the task
-                      if (nextTask.user_id === 'internal_user') {
-                        try {
-                          await internalDB.updateTask(nextTask.local_id, { status: 'in_progress' })
-                          setInternalTasks(prev => prev.map(t => 
-                            t.local_id === nextTask.local_id 
-                              ? { ...t, status: 'in_progress' }
-                              : t
-                          ))
-                          console.log(`✅ Manually started task: ${nextTask.name}`)
-                        } catch (error) {
-                          console.error('❌ Error manually starting task:', error)
-                        }
+            // App is in foreground - show manual start option
+            Alert.alert(
+              'Time to Start!',
+              `It's time to start "${nextTask.name}"`,
+              [
+                {
+                  text: 'Start Task',
+                  onPress: async () => {
+                    // Manually start the task
+                    if (nextTask.user_id === 'internal_user') {
+                      try {
+                        await internalDB.updateTask(nextTask.local_id, { status: 'in_progress' })
+                        setInternalTasks(prev => prev.map(t => 
+                          t.local_id === nextTask.local_id 
+                            ? { ...t, status: 'in_progress' }
+                            : t
+                        ))
+                        console.log(`✅ Manually started task: ${nextTask.name}`)
+                      } catch (error) {
+                        console.error('❌ Error manually starting task:', error)
                       }
-                    },
+                    }
                   },
-                  {
-                    text: 'Do Nothing',
-                    style: 'cancel',
-                  },
-                ]
-              )
-            }
+                },
+                {
+                  text: 'Skip',
+                  style: 'cancel',
+                },
+              ]
+            )
           } else {
-            // App is in background - send notification immediately
-            console.log('📱 App in background, task should start, sending notification...')
-            console.log('📱 Task:', nextTask.name, 'Start time:', nextTask.start_time)
-            console.log('📱 Current time:', new Date().toISOString())
-            console.log('📱 App state:', appState)
-            
-            // Send notification immediately using direct Expo API (most reliable)
+            // App is in background - send notification
             setTimeout(async () => {
               try {
-                console.log('📱 Sending task start notification...')
                 await Notifications.scheduleNotificationAsync({
                   content: {
                     title: `Time to Start: ${nextTask.name}`,
-                    body: 'Your scheduled task is ready to begin!',
+                    body: 'Tap to start your scheduled task!',
                     data: { taskId: nextTask.local_id, type: 'task_start' },
                     categoryIdentifier: 'task_start',
                   },
-                  trigger: null, // Immediate
+                  trigger: null,
                 })
-                console.log('✅ Task start notification sent successfully')
+                console.log('✅ Task start notification sent')
               } catch (error) {
                 console.error('❌ Task start notification failed:', error)
               }
-            }, 100) // Small delay to ensure app state is properly detected
+            }, 100)
           }
         }
       }
     }
 
-    // Check if current task has ended
+    // Check if current task has ended and offer manual completion
     if (currentTask) {
       const now = currentTime.getTime()
       const taskEnd = new Date(currentTask.end_time!).getTime()
@@ -544,115 +417,63 @@ export default function ScheduleScreen() {
         if (!alertedTasks.has(completionKey)) {
           setAlertedTasks(prev => new Set(prev).add(completionKey))
           
-          // Only auto-complete if autoStart is enabled
-          if (autoStart) {
-            console.log('Auto-completing task:', currentTask.name)
-            
-            // Send notification if app is in background
-            if (appState !== 'active') {
-              setTimeout(async () => {
-                try {
-                  console.log('📱 Sending auto-completion notification...')
-                  await Notifications.scheduleNotificationAsync({
-                    content: {
-                      title: `Auto-Completed: ${currentTask.name}`,
-                      body: 'Your task time ended and was automatically marked as complete.',
-                      data: { taskId: currentTask.local_id, type: 'auto_complete' },
-                      categoryIdentifier: 'task_complete',
-                    },
-                    trigger: null,
-                  })
-                  console.log('✅ Auto-completion notification sent')
-                } catch (error) {
-                  console.error('❌ Auto-completion notification failed:', error)
-                }
-              }, 100)
-            }
-            
-            // Mark task as completed automatically
-            if (currentTask.user_id === 'internal_user') {
-              const completeTask = async () => {
-                try {
-                  const completedAt = new Date().toISOString()
-                  await internalDB.updateTask(currentTask.local_id, { 
-                    status: 'completed', 
-                    completed_at: completedAt 
-                  })
-                  setInternalTasks(prev => prev.map(t => 
-                    t.local_id === currentTask.local_id 
-                      ? { ...t, status: 'completed', completed_at: completedAt }
-                      : t
-                  ))
-                  console.log(`✅ Auto-completed task: ${currentTask.name}`)
-                } catch (error) {
-                  console.error('❌ Error auto-completing task:', error)
-                }
-              }
-              completeTask()
-            }
-          } else {
-            // Manual mode - show alert to complete task if app is active, notification if backgrounded
-            if (appState === 'active') {
-              Alert.alert(
-                'Task Time Ended',
-                `"${currentTask.name}" time is up. Mark as completed?`,
-                [
-                  {
-                    text: 'Complete Task',
-                    onPress: async () => {
-                      if (currentTask.user_id === 'internal_user') {
-                        try {
-                          const completedAt = new Date().toISOString()
-                          await internalDB.updateTask(currentTask.local_id, { 
-                            status: 'completed', 
-                            completed_at: completedAt 
-                          })
-                          setInternalTasks(prev => prev.map(t => 
-                            t.local_id === currentTask.local_id 
-                              ? { ...t, status: 'completed', completed_at: completedAt }
-                              : t
-                          ))
-                          console.log(`✅ Manually completed task: ${currentTask.name}`)
-                        } catch (error) {
-                          console.error('❌ Error manually completing task:', error)
-                        }
+          if (appState === 'active') {
+            // Show manual completion option
+            Alert.alert(
+              'Task Time Ended',
+              `"${currentTask.name}" time is up. Mark as completed?`,
+              [
+                {
+                  text: 'Complete Task',
+                  onPress: async () => {
+                    if (currentTask.user_id === 'internal_user') {
+                      try {
+                        const completedAt = new Date().toISOString()
+                        await internalDB.updateTask(currentTask.local_id, { 
+                          status: 'completed', 
+                          completed_at: completedAt 
+                        })
+                        setInternalTasks(prev => prev.map(t => 
+                          t.local_id === currentTask.local_id 
+                            ? { ...t, status: 'completed', completed_at: completedAt }
+                            : t
+                        ))
+                        console.log(`✅ Manually completed task: ${currentTask.name}`)
+                      } catch (error) {
+                        console.error('❌ Error manually completing task:', error)
                       }
-                    },
+                    }
                   },
-                  {
-                    text: 'Keep Running',
-                    style: 'cancel',
+                },
+                {
+                  text: 'Keep Running',
+                  style: 'cancel',
+                },
+              ]
+            )
+          } else {
+            // App is in background - send completion notification
+            setTimeout(async () => {
+              try {
+                await Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: `Task Time Ended: ${currentTask.name}`,
+                    body: 'Tap to mark as complete or continue running.',
+                    data: { taskId: currentTask.local_id, type: 'task_complete' },
+                    categoryIdentifier: 'task_complete',
                   },
-                ]
-              )
-            } else {
-              // App is in background - send task completion notification
-              console.log('📱 App in background, task finished, sending completion notification...')
-              console.log('📱 Task:', currentTask.name, 'End time:', currentTask.end_time)
-              
-              setTimeout(async () => {
-                try {
-                  console.log('📱 Sending task completion notification...')
-                  await Notifications.scheduleNotificationAsync({
-                    content: {
-                      title: `Task Completed: ${currentTask.name}`,
-                      body: 'Your scheduled task time has ended. Tap to mark as complete or continue.',
-                      data: { taskId: currentTask.local_id, type: 'task_complete' },
-                      categoryIdentifier: 'task_complete',
-                    },
-                    trigger: null, // Immediate
-                  })
-                  console.log('✅ Task completion notification sent successfully')
-                } catch (error) {
-                  console.error('❌ Task completion notification failed:', error)
-                }
-              }, 100)
-            }
+                  trigger: null,
+                })
+                console.log('✅ Task completion notification sent')
+              } catch (error) {
+                console.error('❌ Task completion notification failed:', error)
+              }
+            }, 100)
           }
         }
       }
     }
-  }, [currentTask, nextTask, currentTime, appState, autoStart, alertedTasks])
+  }, [currentTask, nextTask, currentTime, appState, alertedTasks])
 
   const handleStartTask = async (task: Task) => {
     // Update internal task status if it's from internal DB
@@ -680,16 +501,6 @@ export default function ScheduleScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.title}>Schedule</Text>
-          <View style={styles.autoStartToggle}>
-            <Text style={styles.autoStartText}>Auto-Start</Text>
-            <Switch
-              value={autoStart}
-              onValueChange={setAutoStart}
-              trackColor={{ false: '#767577', true: '#4CAF50' }}
-              thumbColor="#f4f3f4"
-              style={styles.smallSwitch}
-            />
-          </View>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity
@@ -779,7 +590,7 @@ export default function ScheduleScreen() {
         <View style={styles.debugSection}>
           <Text style={styles.debugTitle}>Debug Info</Text>
           <Text style={styles.debugText}>App State: {appState}</Text>
-          <Text style={styles.debugText}>Auto Start: {autoStart ? 'ON' : 'OFF'}</Text>
+          <Text style={styles.debugText}>Mode: Manual Start Only</Text>
           <Text style={styles.debugText}>Time: {currentTime.toLocaleTimeString()}</Text>
           <Text style={styles.debugText}>Data Source: {internalTasks.length > 0 ? 'Internal DB' : 'Sample'}</Text>
           <Text style={styles.debugText}>Tasks Count: {tasks.length}</Text>
@@ -883,7 +694,7 @@ export default function ScheduleScreen() {
                 )}
               </View>
               <View style={styles.actionButtons}>
-                {shouldTaskStartNow(nextTask) && !autoStart && (
+                {shouldTaskStartNow(nextTask) && (
                   <TouchableOpacity
                     style={styles.startButton}
                     onPress={() => handleStartTask(nextTask)}
@@ -931,7 +742,7 @@ export default function ScheduleScreen() {
                   )}
                 </View>
                 <View style={styles.actionButtons}>
-                  {shouldTaskStartNow(task) && !autoStart && (
+                  {shouldTaskStartNow(task) && (
                     <TouchableOpacity
                       style={[styles.startButton, styles.smallStartButton]}
                       onPress={() => handleStartTask(task)}
@@ -985,19 +796,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-  },
-  autoStartToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-  },
-  autoStartText: {
-    fontSize: 12,
-    color: '#666',
-  },
-  smallSwitch: {
-    transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
   },
   testButton: {
     backgroundColor: Colors.light.tint,
