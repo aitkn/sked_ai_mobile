@@ -618,6 +618,31 @@ export default function ScheduleScreen() {
           <Text style={styles.debugText}>Alerts: {Array.from(alertedTasks).join(', ') || 'none'}</Text>
         </View>
         
+        {/* Ready to Start Section */}
+        {!currentTask && sortedTasks.some(shouldTaskStartNow) && (
+          <View style={styles.readySection}>
+            <Text style={styles.sectionTitle}>Ready to Start</Text>
+            {sortedTasks.filter(shouldTaskStartNow).map((task) => (
+              <View key={task.local_id} style={styles.readyCard}>
+                <View style={styles.taskInfo}>
+                  <Text style={styles.readyTaskName}>{task.name}</Text>
+                  <Text style={styles.readyTaskTime}>
+                    {formatTaskTime(task.start_time!)} - {formatTaskTime(task.end_time!)}
+                  </Text>
+                  <Text style={styles.readyIndicator}>Ready to start now!</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.readyStartButton}
+                  onPress={() => handleStartTask(task)}
+                >
+                  <FontAwesome name="play" size={20} color="#fff" />
+                  <Text style={styles.readyStartButtonText}>Start</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Current Status Section */}
         <View style={styles.currentSection}>
           <Text style={styles.sectionTitle}>Now</Text>
@@ -643,45 +668,22 @@ export default function ScheduleScreen() {
                   </>
                 )}
                 {!nextTask && <Text style={styles.freeTimeText}>No upcoming tasks</Text>}
-                {/* Show ready tasks that can be started manually */}
-                {!currentTask && sortedTasks.some(shouldTaskStartNow) && (
-                  <>
-                    <Text style={styles.readyTasksHeader}>Ready to Start:</Text>
-                    {sortedTasks.filter(shouldTaskStartNow).slice(0, 2).map((task) => (
-                      <TouchableOpacity
-                        key={task.local_id}
-                        style={styles.readyTaskButton}
-                        onPress={() => handleStartTask(task)}
-                      >
-                        <FontAwesome name="play" size={16} color="#fff" />
-                        <Text style={styles.readyTaskButtonText}>{task.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </>
-                )}
               </>
             )}
           </View>
         </View>
 
         {/* Next Task Section */}
-        {nextTask && (
+        {nextTask && !shouldTaskStartNow(nextTask) && (
           <View style={styles.nextSection}>
             <Text style={styles.sectionTitle}>Next Up</Text>
             <View style={[
               styles.nextCard,
-              isTaskAboutToStart(nextTask) && styles.aboutToStartCard,
-              shouldTaskStartNow(nextTask) && styles.shouldStartCard
+              isTaskAboutToStart(nextTask) && styles.aboutToStartCard
             ]}>
               <View style={styles.taskInfo}>
-                <Text style={[
-                  styles.nextTaskName,
-                  shouldTaskStartNow(nextTask) && styles.shouldStartText
-                ]}>{nextTask.name}</Text>
-                <Text style={[
-                  styles.nextTaskTime,
-                  shouldTaskStartNow(nextTask) && styles.shouldStartSubtext
-                ]}>
+                <Text style={styles.nextTaskName}>{nextTask.name}</Text>
+                <Text style={styles.nextTaskTime}>
                   {formatTaskTime(nextTask.start_time!)} - {formatTaskTime(nextTask.end_time!)}
                 </Text>
                 {isTaskAboutToStart(nextTask) && (
@@ -689,66 +691,35 @@ export default function ScheduleScreen() {
                     Starting in {Math.ceil((new Date(nextTask.start_time!).getTime() - currentTime.getTime()) / 1000)}s
                   </Text>
                 )}
-                {shouldTaskStartNow(nextTask) && (
-                  <Text style={styles.shouldStartText}>Ready to Start!</Text>
-                )}
-              </View>
-              <View style={styles.actionButtons}>
-                {shouldTaskStartNow(nextTask) && (
-                  <TouchableOpacity
-                    style={styles.startButton}
-                    onPress={() => handleStartTask(nextTask)}
-                  >
-                    <FontAwesome name="play" size={16} color="#fff" />
-                    <Text style={styles.startButtonText}>Start</Text>
-                  </TouchableOpacity>
-                )}
               </View>
             </View>
           </View>
         )}
 
         {/* Upcoming Tasks */}
-        {upcomingTasks.length > 1 && (
+        {upcomingTasks.filter(task => !shouldTaskStartNow(task)).length > 0 && (
           <View style={styles.upcomingSection}>
             <Text style={styles.sectionTitle}>Upcoming</Text>
-            {upcomingTasks.slice(1, 5).map((task) => (
+            {upcomingTasks
+              .filter(task => !shouldTaskStartNow(task))
+              .slice(0, 4)
+              .map((task) => (
               <TouchableOpacity
                 key={task.local_id}
                 style={[
                   styles.upcomingCard,
-                  isTaskAboutToStart(task) && styles.aboutToStartCard,
-                  shouldTaskStartNow(task) && styles.shouldStartCard
+                  isTaskAboutToStart(task) && styles.aboutToStartCard
                 ]}
               >
                 <View style={styles.taskInfo}>
-                  <Text style={[
-                    styles.upcomingTaskName,
-                    shouldTaskStartNow(task) && styles.shouldStartText
-                  ]}>{task.name}</Text>
-                  <Text style={[
-                    styles.upcomingTaskTime,
-                    shouldTaskStartNow(task) && styles.shouldStartSubtext
-                  ]}>
+                  <Text style={styles.upcomingTaskName}>{task.name}</Text>
+                  <Text style={styles.upcomingTaskTime}>
                     {formatTaskTime(task.start_time!)} - {formatTaskTime(task.end_time!)}
                   </Text>
                   {isTaskAboutToStart(task) && (
                     <Text style={styles.aboutToStartText}>
                       Starting in {Math.ceil((new Date(task.start_time!).getTime() - currentTime.getTime()) / 1000)}s
                     </Text>
-                  )}
-                  {shouldTaskStartNow(task) && (
-                    <Text style={styles.shouldStartIndicator}>Ready!</Text>
-                  )}
-                </View>
-                <View style={styles.actionButtons}>
-                  {shouldTaskStartNow(task) && (
-                    <TouchableOpacity
-                      style={[styles.startButton, styles.smallStartButton]}
-                      onPress={() => handleStartTask(task)}
-                    >
-                      <FontAwesome name="play" size={12} color="#fff" />
-                    </TouchableOpacity>
                   )}
                 </View>
               </TouchableOpacity>
@@ -811,6 +782,62 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 100,
   },
+  readySection: {
+    padding: 20,
+    paddingBottom: 10,
+  },
+  readyCard: {
+    backgroundColor: '#e8f5e8',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  readyTaskName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+    marginBottom: 4,
+  },
+  readyTaskTime: {
+    fontSize: 14,
+    color: '#4CAF50',
+    marginBottom: 4,
+  },
+  readyIndicator: {
+    fontSize: 12,
+    color: '#2e7d32',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  readyStartButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 25,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  readyStartButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
   currentSection: {
     padding: 20,
   },
@@ -856,31 +883,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.8)',
     marginBottom: 12,
-  },
-  readyTasksHeader: {
-    fontSize: 14,
-    color: '#fff',
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 8,
-    opacity: 0.9,
-  },
-  readyTaskButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  readyTaskButtonText: {
-    color: '#fff',
-    fontWeight: '500',
-    fontSize: 14,
   },
   nextSection: {
     paddingHorizontal: 20,
