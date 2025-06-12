@@ -29,13 +29,94 @@ export default function DevScreen() {
     }
   }
 
+  const findOptimalTaskSlot = async (): Promise<{ startTime: Date; endTime: Date; description: string }> => {
+    const allTasks = await internalDB.getAllTasks()
+    const now = new Date()
+    const taskDuration = 15 * 1000 // 15 seconds in milliseconds
+    
+    // Filter to active tasks (not completed) and sort by start time
+    const activeTasks = allTasks
+      .filter(task => task.status !== 'completed')
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+    
+    // Find current task (if any)
+    const currentTask = activeTasks.find(task => {
+      const taskStart = new Date(task.start_time).getTime()
+      const taskEnd = new Date(task.end_time).getTime()
+      const nowMs = now.getTime()
+      return nowMs >= taskStart && nowMs < taskEnd
+    })
+    
+    let proposedStartTime: Date
+    let description: string
+    
+    if (!currentTask) {
+      // No current task - schedule 10 seconds from now
+      proposedStartTime = new Date(now.getTime() + 10 * 1000)
+      description = "No current task - scheduled 10 seconds from now"
+    } else {
+      // There's a current task - schedule 10 seconds after it ends
+      const currentTaskEnd = new Date(currentTask.end_time).getTime()
+      proposedStartTime = new Date(currentTaskEnd + 10 * 1000)
+      description = `Scheduled 10 seconds after "${currentTask.name}" ends`
+    }
+    
+    // Check for conflicts and find next available slot
+    let slotFound = false
+    let attempts = 0
+    const maxAttempts = 20 // Prevent infinite loops
+    
+    while (!slotFound && attempts < maxAttempts) {
+      const proposedStartMs = proposedStartTime.getTime()
+      const proposedEndMs = proposedStartMs + taskDuration
+      
+      // Check if this slot conflicts with any existing task
+      const hasConflict = activeTasks.some(task => {
+        const taskStartMs = new Date(task.start_time).getTime()
+        const taskEndMs = new Date(task.end_time).getTime()
+        
+        // Check for overlap: proposed task starts before existing task ends AND proposed task ends after existing task starts
+        return proposedStartMs < taskEndMs && proposedEndMs > taskStartMs
+      })
+      
+      if (!hasConflict) {
+        slotFound = true
+      } else {
+        // Find the next task that conflicts and schedule after it
+        const conflictingTask = activeTasks.find(task => {
+          const taskStartMs = new Date(task.start_time).getTime()
+          const taskEndMs = new Date(task.end_time).getTime()
+          return proposedStartMs < taskEndMs && proposedEndMs > taskStartMs
+        })
+        
+        if (conflictingTask) {
+          const conflictTaskEnd = new Date(conflictingTask.end_time).getTime()
+          proposedStartTime = new Date(conflictTaskEnd + 10 * 1000)
+          description = `Rescheduled to 10 seconds after "${conflictingTask.name}" (conflict avoided)`
+        } else {
+          // Fallback: move forward by 30 seconds
+          proposedStartTime = new Date(proposedStartTime.getTime() + 30 * 1000)
+          description = "Rescheduled to avoid conflicts"
+        }
+        attempts++
+      }
+    }
+    
+    if (!slotFound) {
+      // Fallback: schedule way in the future
+      proposedStartTime = new Date(now.getTime() + 5 * 60 * 1000) // 5 minutes from now
+      description = "Scheduled 5 minutes from now (couldn't find earlier slot)"
+    }
+    
+    const endTime = new Date(proposedStartTime.getTime() + taskDuration)
+    return { startTime: proposedStartTime, endTime, description }
+  }
+
   const handleAddQuickTask = async () => {
     try {
       setLoading(true)
       
-      const now = new Date()
-      const startTime = new Date(now.getTime() + 10 * 1000) // 10 seconds from now
-      const endTime = new Date(now.getTime() + 25 * 1000)   // 15 seconds duration
+      const { startTime, endTime, description } = await findOptimalTaskSlot()
       
       const newTask = await internalDB.addTaskWithDuration(
         `Quick Test ${new Date().toLocaleTimeString()}`,
@@ -45,9 +126,11 @@ export default function DevScreen() {
       
       await loadTasks()
       
+      const timeUntilStart = Math.round((startTime.getTime() - new Date().getTime()) / 1000)
+      
       Alert.alert(
         'Task Created!',
-        `"${newTask.name}" will start in 10 seconds and run for 15 seconds.`,
+        `"${newTask.name}" will start in ${timeUntilStart} seconds and run for 15 seconds.\n\n${description}`,
         [{ text: 'OK' }]
       )
     } catch (error: any) {
