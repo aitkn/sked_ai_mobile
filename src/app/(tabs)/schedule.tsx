@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   StyleSheet,
   View,
@@ -15,6 +15,7 @@ import { FontAwesome } from '@expo/vector-icons'
 import { ExpoNotificationService } from '@/lib/notifications/expo-notifications'
 import * as Notifications from 'expo-notifications'
 import { internalDB, InternalTask } from '@/lib/internal-db'
+import { useFocusEffect } from 'expo-router'
 
 // Configure notification handler for Expo
 Notifications.setNotificationHandler({
@@ -70,13 +71,21 @@ export default function ScheduleScreen() {
   const timerRef = useRef<NodeJS.Timeout | number | null>(null)
   const expoNotificationService = useRef(new ExpoNotificationService()).current
 
-  // Load internal tasks when component mounts
+  // Load internal tasks when component mounts and set up frequent refresh
   useEffect(() => {
     loadInternalTasks()
-    // Refresh internal tasks every 5 seconds
-    const interval = setInterval(loadInternalTasks, 5000)
+    // Refresh internal tasks every 1 second for immediate updates
+    const interval = setInterval(loadInternalTasks, 1000)
     return () => clearInterval(interval)
   }, [])
+
+  // Refresh tasks when screen comes into focus (when user navigates to this tab)
+  useFocusEffect(
+    useCallback(() => {
+      loadInternalTasks()
+    }, [])
+  )
+
 
   const loadInternalTasks = async () => {
     try {
@@ -220,10 +229,14 @@ export default function ScheduleScreen() {
     }
   }, [])
 
-  // Track app state
+  // Track app state and refresh tasks when coming to foreground
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
       setAppState(nextAppState)
+      // Refresh tasks when app comes to foreground  
+      if (nextAppState === 'active') {
+        loadInternalTasks()
+      }
     })
 
     return () => {
