@@ -710,11 +710,11 @@ export default function ScheduleScreen() {
         )}
 
         {/* Upcoming Tasks */}
-        {upcomingTasks.filter(task => !shouldTaskStartNow(task)).length > 0 && (
+        {upcomingTasks.filter(task => !shouldTaskStartNow(task) && task.local_id !== nextTask?.local_id).length > 0 && (
           <View style={styles.upcomingSection}>
             <Text style={styles.sectionTitle}>Upcoming</Text>
             {upcomingTasks
-              .filter(task => !shouldTaskStartNow(task))
+              .filter(task => !shouldTaskStartNow(task) && task.local_id !== nextTask?.local_id)
               .slice(0, 4)
               .map((task) => (
               <TouchableOpacity
