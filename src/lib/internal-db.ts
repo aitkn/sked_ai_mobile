@@ -13,12 +13,25 @@ export interface InternalTask {
   updated_at: string // ISO string
 }
 
+// Internal action structure for tracking user actions
+export interface InternalAction {
+  id: string
+  action_type: 'task_started' | 'task_completed' | 'task_skipped'
+  task_id: string
+  task_name: string
+  timestamp: string // ISO string
+  details?: string // optional additional information
+}
+
 const STORAGE_KEY = 'internal_tasks'
+const ACTIONS_STORAGE_KEY = 'internal_actions'
 
 export class InternalDB {
   private static instance: InternalDB
   private tasks: InternalTask[] = []
+  private actions: InternalAction[] = []
   private loaded = false
+  private actionsLoaded = false
 
   static getInstance(): InternalDB {
     if (!InternalDB.instance) {
@@ -200,13 +213,91 @@ export class InternalDB {
   ): Promise<InternalTask> {
     const duration = InternalDB.calculateDuration(startTime, endTime)
     
-    return this.addTask({
+    const newTask = await this.addTask({
       name,
       start_time: startTime,
       end_time: endTime,
       duration,
       status: 'pending',
     })
+
+    // Note: Task creation is a dev/testing feature, not tracked as user action
+
+    return newTask
+  }
+
+  // ACTIONS MANAGEMENT
+
+  // Load actions from AsyncStorage
+  async loadActions(): Promise<InternalAction[]> {
+    if (this.actionsLoaded) {
+      return this.actions
+    }
+
+    try {
+      const stored = await AsyncStorage.getItem(ACTIONS_STORAGE_KEY)
+      if (stored) {
+        this.actions = JSON.parse(stored)
+        console.log('📱 Loaded', this.actions.length, 'actions from internal DB')
+      } else {
+        this.actions = []
+        console.log('📱 No actions found in internal DB, starting fresh')
+      }
+      this.actionsLoaded = true
+      return this.actions
+    } catch (error) {
+      console.error('❌ Error loading actions from internal DB:', error)
+      this.actions = []
+      this.actionsLoaded = true
+      return this.actions
+    }
+  }
+
+  // Save actions to AsyncStorage
+  private async saveActions(): Promise<void> {
+    try {
+      await AsyncStorage.setItem(ACTIONS_STORAGE_KEY, JSON.stringify(this.actions))
+      console.log('💾 Saved', this.actions.length, 'actions to internal DB')
+    } catch (error) {
+      console.error('❌ Error saving actions to internal DB:', error)
+    }
+  }
+
+  // Add a new action
+  async addAction(actionData: Omit<InternalAction, 'id' | 'timestamp'>): Promise<InternalAction> {
+    await this.loadActions()
+    
+    const newAction: InternalAction = {
+      id: `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      ...actionData,
+      timestamp: new Date().toISOString(),
+    }
+
+    this.actions.push(newAction)
+    await this.saveActions()
+    
+    console.log('📝 Added action to internal DB:', newAction.action_type, newAction.task_name)
+    return newAction
+  }
+
+  // Get all actions
+  async getAllActions(): Promise<InternalAction[]> {
+    await this.loadActions()
+    return [...this.actions].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+  }
+
+  // Clear all actions
+  async clearAllActions(): Promise<void> {
+    this.actions = []
+    await this.saveActions()
+    console.log('🧹 Cleared all actions from internal DB')
+  }
+
+  // Get actions for a specific task
+  async getActionsForTask(taskId: string): Promise<InternalAction[]> {
+    await this.loadActions()
+    return this.actions.filter(action => action.task_id === taskId)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   }
 }
 

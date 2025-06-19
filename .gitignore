@@ -12,6 +12,12 @@ Thumbs.db
 .vscode/
 .claude/
 
+# MCP Configuration (contains sensitive keys)
+.mcp.json
+
+# Scripts with service role keys
+create-current-timeline.js
+
 # Node
 node_modules/
 npm-debug.log*

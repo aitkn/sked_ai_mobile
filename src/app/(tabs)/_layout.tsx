@@ -55,17 +55,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="tasks"
+        name="dev"
         options={{
-          title: 'Tasks',
-          tabBarIcon: ({ color }) => <TabBarIcon name="check-square" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="two"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color }) => <TabBarIcon name="cog" color={color} />,
+          title: 'Dev',
+          tabBarIcon: ({ color }) => <TabBarIcon name="wrench" color={color} />,
         }}
       />
     </Tabs>

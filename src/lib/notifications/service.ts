@@ -51,7 +51,19 @@ export class NotificationService {
           break
         case EventType.PRESS:
           console.log('User pressed notification', detail.notification)
-          // Navigate to task
+          // Navigate to task or handle action
+          if (detail.pressAction?.id === 'start-task') {
+            // Handle start task action
+            console.log('User wants to start task:', detail.notification.data?.taskId)
+            // This would need to be handled by the app's task context
+          }
+          break
+        case EventType.ACTION_PRESS:
+          console.log('User pressed action:', detail.pressAction)
+          if (detail.pressAction?.id === 'start-task') {
+            // Handle start task action
+            console.log('Starting task:', detail.notification.data?.taskId)
+          }
           break
       }
     })
@@ -69,50 +81,80 @@ export class NotificationService {
     }
   }
 
-  async scheduleTaskNotification(task: Task, type: 'reminder' | 'due') {
+  async scheduleTaskNotification(task: Task, type: 'reminder' | 'due' | 'start') {
     if (!notifee) return
     
-    const triggerDate = type === 'reminder' ? task.reminder_at : task.due_at
-    if (!triggerDate) return
+    const triggerDate = type === 'start' 
+      ? task.reminder_at // Using reminder_at for immediate notification
+      : type === 'reminder' 
+      ? task.reminder_at 
+      : task.due_at
+      
+    if (!triggerDate && type !== 'start') return
 
-    const trigger: any = {
+    const trigger: any = type === 'start' ? undefined : {
       type: TriggerType.TIMESTAMP,
       timestamp: new Date(triggerDate).getTime(),
     }
 
-    const title = type === 'reminder' 
+    const title = type === 'start'
+      ? `Time to Start: ${task.name}`
+      : type === 'reminder' 
       ? `Reminder: ${task.name}`
       : `Task Due: ${task.name}`
 
-    const body = type === 'reminder'
+    const body = type === 'start'
+      ? 'Your scheduled task is ready to begin!'
+      : type === 'reminder'
       ? 'Don\'t forget about this task!'
       : 'This task is due now'
 
     try {
-      await notifee.createTriggerNotification(
-        {
-          id: `${task.local_id}_${type}`,
-          title,
-          body,
-          android: {
-            channelId: this.channelId,
-            importance: AndroidImportance.HIGH,
-            pressAction: {
-              id: 'default',
-              launchActivity: 'default',
+      const notificationConfig: any = {
+        id: `${task.local_id}_${type}`,
+        title,
+        body,
+        android: {
+          channelId: this.channelId,
+          importance: AndroidImportance.HIGH,
+          pressAction: {
+            id: 'default',
+            launchActivity: 'default',
+          },
+          actions: type === 'start' ? [
+            {
+              title: 'Start Task',
+              pressAction: {
+                id: 'start-task',
+                launchActivity: 'default',
+              },
             },
-          },
-          ios: {
-            sound: 'default',
-            categoryId: 'task',
-          },
-          data: {
-            taskId: task.local_id,
-            type,
-          },
+          ] : [],
         },
-        trigger,
-      )
+        ios: {
+          sound: 'default',
+          categoryId: 'task',
+          attachments: [],
+          actions: type === 'start' ? [
+            {
+              id: 'start-task',
+              title: 'Start Task',
+              foreground: true,
+            },
+          ] : [],
+        },
+        data: {
+          taskId: task.local_id,
+          type,
+        },
+      }
+
+      if (trigger) {
+        await notifee.createTriggerNotification(notificationConfig, trigger)
+      } else {
+        // For immediate notifications (start type)
+        await notifee.displayNotification(notificationConfig)
+      }
       
       console.log(`Scheduled ${type} notification for task ${task.local_id}`)
     } catch (error) {
