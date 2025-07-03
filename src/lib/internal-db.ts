@@ -7,8 +7,10 @@ export interface InternalTask {
   start_time: string // ISO string
   end_time: string   // ISO string
   duration: number   // duration in seconds
-  status: 'pending' | 'in_progress' | 'completed' // task status
+  status: 'pending' | 'in_progress' | 'completed' | 'paused' | 'cancelled' // task status
   completed_at?: string // ISO string, optional
+  paused_at?: string // ISO string, optional
+  cancelled_at?: string // ISO string, optional
   created_at: string // ISO string
   updated_at: string // ISO string
 }
@@ -16,7 +18,7 @@ export interface InternalTask {
 // Internal action structure for tracking user actions
 export interface InternalAction {
   id: string
-  action_type: 'task_started' | 'task_completed' | 'task_skipped'
+  action_type: 'task_started' | 'task_completed' | 'task_skipped' | 'task_paused' | 'task_cancelled' | 'task_resumed'
   task_id: string
   task_name: string
   timestamp: string // ISO string
@@ -146,6 +148,45 @@ export class InternalDB {
     
     console.log('🗑️ Deleted task from internal DB:', deletedTask.name)
     return true
+  }
+
+  // Save/update a task (upsert functionality)
+  async saveTask(taskData: Partial<InternalTask> & { id: string; name: string; start_time: string; end_time: string }): Promise<InternalTask> {
+    await this.loadTasks()
+    
+    const existingIndex = this.tasks.findIndex(task => task.id === taskData.id)
+    const now = new Date().toISOString()
+    
+    if (existingIndex >= 0) {
+      // Update existing task
+      const updatedTask = {
+        ...this.tasks[existingIndex],
+        ...taskData,
+        updated_at: now,
+      }
+      this.tasks[existingIndex] = updatedTask
+      await this.saveTasks()
+      console.log('📝 Updated existing task in internal DB:', updatedTask.name)
+      return updatedTask
+    } else {
+      // Create new task
+      const newTask: InternalTask = {
+        id: taskData.id,
+        name: taskData.name,
+        start_time: taskData.start_time,
+        end_time: taskData.end_time,
+        duration: taskData.duration || InternalDB.calculateDuration(taskData.start_time, taskData.end_time),
+        status: taskData.status || 'pending',
+        completed_at: taskData.completed_at,
+        created_at: taskData.created_at || now,
+        updated_at: now,
+      }
+      
+      this.tasks.push(newTask)
+      await this.saveTasks()
+      console.log('➕ Added new task to internal DB:', newTask.name)
+      return newTask
+    }
   }
 
   // Clear all tasks

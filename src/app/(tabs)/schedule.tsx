@@ -39,7 +39,7 @@ Notifications.setNotificationHandler({
 // const { width: SCREEN_WIDTH } = Dimensions.get('window')
 
 // Task timing granularity in seconds (10 for debugging, 300 for production)
-const TASK_GRANULARITY = 300 // 10 seconds for debugging, change to 300 (5 minutes) for production
+const TASK_GRANULARITY = 600 // 10 seconds for debugging, change to 300 (5 minutes) for production
 const HALF_GRANULARITY = TASK_GRANULARITY / 2 // Half granularity window
 
 
@@ -62,21 +62,6 @@ const convertInternalTaskToTask = (internalTask: InternalTask): Task => ({
 export default function ScheduleScreen() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [internalTasks, setInternalTasks] = useState<Task[]>([])
-  const [sampleTasks] = useState<Task[]>([
-    {
-      id: '1',
-      local_id: 'sample_1',
-      user_id: 'sample_user',
-      name: 'Quick Test 1',
-      status: 'pending',
-      start_time: new Date(Date.now() + 1000 * 10).toISOString(),
-      end_time: new Date(Date.now() + 1000 * 25).toISOString(),
-      priority: 'high',
-      sync_status: 'synced',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ])
   const [alertedTasks, setAlertedTasks] = useState<Set<string>>(new Set())
   const [appState, setAppState] = useState(AppState.currentState)
   const [justCompletedTask, setJustCompletedTask] = useState<Task | null>(null)
@@ -85,6 +70,8 @@ export default function ScheduleScreen() {
   const [isListening, setIsListening] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [showProcessingIndicator, setShowProcessingIndicator] = useState(false)
+  const [showContextMenu, setShowContextMenu] = useState(false)
+  const [contextMenuTask, setContextMenuTask] = useState<Task | null>(null)
   const timerRef = useRef<NodeJS.Timeout | number | null>(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
   const expoNotificationService = useRef(new ExpoNotificationService()).current
@@ -92,6 +79,7 @@ export default function ScheduleScreen() {
   // Load internal tasks when component mounts and set up frequent refresh
   useEffect(() => {
     loadInternalTasks()
+    loadTimelineData() // Also load timeline data on startup
     // Refresh internal tasks every 1 second for immediate updates
     const interval = setInterval(loadInternalTasks, 1000)
     return () => clearInterval(interval)
@@ -115,6 +103,225 @@ export default function ScheduleScreen() {
     }, [])
   )
 
+  // Real-time subscription to listen for timeline updates from the processor
+  useEffect(() => {
+    console.log('🔗 Setting up real-time subscription for timeline updates...')
+    
+    const channel = supabase
+      .channel('timeline-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen for INSERT, UPDATE, DELETE
+          schema: 'skedai',
+          table: 'user_timeline'
+        },
+        (payload) => {
+          console.log('📡 Timeline update detected via real-time:', payload)
+          console.log('📡 Event type:', payload.eventType)
+          console.log('📡 New timeline data:', payload.new)
+          
+          // When timeline is updated by processor, refresh the UI
+          loadTimelineData()
+        }
+      )
+      .on(
+        'broadcast',
+        { event: 'timeline_update' },
+        (payload) => {
+          console.log('📡 Timeline broadcast received:', payload)
+          // Reload tasks when timeline is updated by processor
+          loadTimelineData()
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Real-time subscription status:', status)
+      })
+
+    // Cleanup subscription when component unmounts
+    return () => {
+      console.log('🔌 Cleaning up real-time subscription...')
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+
+  const loadTimelineData = async () => {
+    try {
+      // Get current user
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !user) {
+        console.log('📡 No authenticated user, skipping timeline fetch')
+        return
+      }
+
+      console.log('📡 Fetching timeline for user:', user.id)
+      
+      // Fetch the latest timeline for the current user
+      const { data: timeline, error } = await supabase
+        .schema('skedai')
+        .from('user_timeline')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (error) {
+        console.log('📡 No timeline found or error:', error.message)
+        // No timeline found - clear all existing tasks to show empty schedule
+        console.log('📡 No timeline found, clearing all existing tasks...')
+        await internalDB.clearAllTasks()
+        // Reload internal tasks to show updated (empty) data
+        loadInternalTasks()
+        return
+      }
+
+      if (timeline && timeline.timeline_json) {
+        console.log('📡 Timeline found, processing tasks with category-based sync...')
+        
+        // Extract tasks from timeline_json
+        const timelineTasks = timeline.timeline_json.tasks || []
+        await syncTasksWithTimeline(timelineTasks)
+        
+        console.log(`📡 Processed ${timelineTasks.length} tasks from timeline`)
+      } else {
+        // No timeline found - clear all existing tasks
+        console.log('📡 No timeline found, clearing all existing tasks...')
+        await internalDB.clearAllTasks()
+      }
+      
+      // Reload internal tasks to show updated data
+      loadInternalTasks()
+      
+    } catch (error) {
+      console.error('📡 Error loading timeline data:', error)
+    }
+  }
+
+  // Enhanced category-based task synchronization
+  const syncTasksWithTimeline = async (timelineTasks: any[]) => {
+    console.log('🔄 Starting category-based task sync...')
+    
+    // 1. Get current tasks and categorize them by status
+    const currentTasks = await internalDB.getAllTasks()
+    const tasksByCategory = {
+      started: currentTasks.filter(t => t.status === 'in_progress'),
+      completed: currentTasks.filter(t => t.status === 'completed'),
+      pending: currentTasks.filter(t => t.status === 'pending')
+    }
+    
+    console.log('📊 Current task categories:', {
+      started: tasksByCategory.started.length,
+      completed: tasksByCategory.completed.length,
+      pending: tasksByCategory.pending.length,
+      total: currentTasks.length
+    })
+    
+    // 2. Create timeline task ID mapping for quick lookup
+    const timelineTaskMap = new Map(
+      timelineTasks.map(t => [
+        t.id || t.task_id || `timeline-${Date.now()}-${Math.random()}`, 
+        t
+      ])
+    )
+    const timelineTaskIds = new Set(timelineTaskMap.keys())
+    
+    console.log('📋 Timeline tasks to sync:', timelineTaskIds.size)
+    
+    // 3. Process each category intelligently
+    
+    // STARTED TASKS: Preserve status, update timeline data if task still exists
+    console.log('🚀 Processing started tasks...')
+    for (const startedTask of tasksByCategory.started) {
+      if (timelineTaskMap.has(startedTask.id)) {
+        const timelineData = timelineTaskMap.get(startedTask.id)!
+        const updatedTask = {
+          ...startedTask,
+          name: timelineData.name || timelineData.title || startedTask.name,
+          start_time: timelineData.start_time || startedTask.start_time,
+          end_time: timelineData.end_time || startedTask.end_time,
+          updated_at: new Date().toISOString(),
+          // Preserve critical user state
+          status: 'in_progress' as const,
+          completed_at: startedTask.completed_at
+        }
+        await internalDB.saveTask(updatedTask)
+        console.log(`✅ Updated started task: ${updatedTask.name}`)
+      } else {
+        // Started task no longer in timeline - keep it but log warning
+        console.log(`⚠️ Started task not in timeline, preserving: ${startedTask.name}`)
+      }
+    }
+    
+    // COMPLETED TASKS: Preserve if still in timeline, otherwise keep for history
+    console.log('✅ Processing completed tasks...')
+    for (const completedTask of tasksByCategory.completed) {
+      if (timelineTaskMap.has(completedTask.id)) {
+        const timelineData = timelineTaskMap.get(completedTask.id)!
+        const updatedTask = {
+          ...completedTask,
+          name: timelineData.name || timelineData.title || completedTask.name,
+          start_time: timelineData.start_time || completedTask.start_time,
+          end_time: timelineData.end_time || completedTask.end_time,
+          updated_at: new Date().toISOString(),
+          // Preserve completion state
+          status: 'completed' as const,
+          completed_at: completedTask.completed_at
+        }
+        await internalDB.saveTask(updatedTask)
+        console.log(`✅ Updated completed task: ${updatedTask.name}`)
+      } else {
+        // Completed task no longer in timeline - preserve for history
+        console.log(`📚 Completed task not in timeline, preserving for history: ${completedTask.name}`)
+      }
+    }
+    
+    // PENDING TASKS: Update with new timeline data or remove if not present
+    console.log('⏳ Processing pending tasks...')
+    for (const pendingTask of tasksByCategory.pending) {
+      if (timelineTaskMap.has(pendingTask.id)) {
+        const timelineData = timelineTaskMap.get(pendingTask.id)!
+        const updatedTask = {
+          ...pendingTask,
+          name: timelineData.name || timelineData.title || pendingTask.name,
+          start_time: timelineData.start_time || pendingTask.start_time,
+          end_time: timelineData.end_time || pendingTask.end_time,
+          updated_at: new Date().toISOString(),
+          status: 'pending' as const
+        }
+        await internalDB.saveTask(updatedTask)
+        console.log(`⏳ Updated pending task: ${updatedTask.name}`)
+      } else {
+        // Pending task no longer in timeline - safe to remove
+        console.log(`🗑️ Removing pending task not in timeline: ${pendingTask.name}`)
+        await internalDB.deleteTask(pendingTask.id)
+      }
+    }
+    
+    // 4. Add new tasks from timeline that don't exist in any category
+    console.log('➕ Adding new tasks from timeline...')
+    const existingTaskIds = new Set(currentTasks.map(t => t.id))
+    
+    for (const [taskId, timelineTask] of Array.from(timelineTaskMap)) {
+      if (!existingTaskIds.has(taskId)) {
+        const newTask = {
+          id: taskId,
+          name: timelineTask.name || timelineTask.title || 'Unnamed Task',
+          status: 'pending' as const,
+          start_time: timelineTask.start_time,
+          end_time: timelineTask.end_time,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        await internalDB.saveTask(newTask)
+        console.log(`➕ Added new task: ${newTask.name}`)
+      }
+    }
+    
+    console.log('✅ Category-based task sync completed')
+  }
 
   const loadInternalTasks = async () => {
     try {
@@ -394,8 +601,8 @@ export default function ScheduleScreen() {
   }, [])
 
 
-  // Always use internal DB, fallback to sample tasks if empty
-  const tasks = internalTasks.length > 0 ? internalTasks : sampleTasks
+  // Always use internal DB only - no fallback to sample tasks
+  const tasks = internalTasks
 
   // Get all tasks with start times, sorted by start time
   const allTasksWithTimes = [...tasks]
@@ -409,27 +616,31 @@ export default function ScheduleScreen() {
   // Find current task (in progress tasks)
   const runningTask = allTasksWithTimes.find(task => {
     if (!task.start_time || !task.end_time) return false
-    const startTime = new Date(task.start_time).getTime()
-    const now = currentTime.getTime()
     
-    // Only consider manually started tasks as current
-    return task.status === 'in_progress' && now >= startTime
+    // Any task with 'in_progress' status should be considered running, regardless of scheduled time
+    // This allows manually started tasks to appear in the current section immediately
+    return task.status === 'in_progress'
   })
   
   // Current task is either the running task or just completed task for display
   const currentTask = justCompletedTask || runningTask
 
-  // Sort tasks excluding completed ones (for upcoming/next sections)
-  const sortedTasks = allTasksWithTimes.filter(task => task.status !== 'completed')
+  // Sort tasks excluding completed and cancelled ones (for upcoming/next sections)
+  const sortedTasks = allTasksWithTimes.filter(task => task.status !== 'completed' && task.status !== 'cancelled')
 
   const upcomingTasks = allTasksWithTimes.filter(task => {
-    if (!task.start_time || task.status === 'completed') return false
+    if (!task.start_time || task.status === 'completed' || task.status === 'cancelled') return false
+    // Exclude tasks that are already running (in_progress) or paused
+    if (task.status === 'in_progress' || task.status === 'paused') return false
     const startTime = new Date(task.start_time).getTime()
     const now = currentTime.getTime()
     return startTime > now
   })
 
   const nextTask = upcomingTasks[0]
+
+  // Get paused tasks
+  const pausedTasks = allTasksWithTimes.filter(task => task.status === 'paused')
 
   // Helper functions
   const formatTime = (time: { hours: number; minutes: number; seconds: number }) => {
@@ -441,6 +652,32 @@ export default function ScheduleScreen() {
   const formatTaskTime = (dateString: string) => {
     const date = new Date(dateString)
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Format time until task starts with smart units
+  const formatTimeUntil = (milliseconds: number) => {
+    if (milliseconds <= 0) return 'Starting soon'
+    
+    const totalSeconds = Math.ceil(milliseconds / 1000)
+    const totalMinutes = Math.ceil(totalSeconds / 60)
+    const totalHours = Math.floor(totalMinutes / 60)
+    
+    // Less than 1 minute: show seconds
+    if (totalSeconds < 60) {
+      return `${totalSeconds}s`
+    }
+    
+    // Less than 1 hour: show minutes only
+    if (totalMinutes < 60) {
+      return `${totalMinutes}m`
+    }
+    
+    // 1 hour or more: show hours and remaining minutes
+    const remainingMinutes = totalMinutes % 60
+    if (remainingMinutes === 0) {
+      return `${totalHours}h`
+    }
+    return `${totalHours}h ${remainingMinutes}m`
   }
 
 
@@ -683,6 +920,137 @@ export default function ScheduleScreen() {
     }
   }
 
+  const handlePauseTask = async (task: Task) => {
+    if (task.user_id === 'internal_user') {
+      try {
+        const pausedAt = new Date().toISOString()
+        
+        // Update database first
+        await internalDB.updateTask(task.local_id, { 
+          status: 'paused', 
+          paused_at: pausedAt 
+        })
+        
+        // Log the pause action
+        await internalDB.addAction({
+          action_type: 'task_paused',
+          task_id: task.local_id,
+          task_name: task.name,
+          details: `Paused at ${new Date().toLocaleTimeString()}`
+        })
+        
+        // Update local state
+        setInternalTasks(prev => prev.map(t => 
+          t.local_id === task.local_id 
+            ? { ...t, status: 'paused', paused_at: pausedAt }
+            : t
+        ))
+        
+        console.log(`⏸️ Paused task: ${task.name}`)
+      } catch (error) {
+        console.error('❌ Error pausing task:', error)
+      }
+    }
+  }
+
+  const handleCancelTask = async (task: Task) => {
+    if (task.user_id === 'internal_user') {
+      try {
+        const cancelledAt = new Date().toISOString()
+        
+        // Update database first
+        await internalDB.updateTask(task.local_id, { 
+          status: 'cancelled', 
+          cancelled_at: cancelledAt 
+        })
+        
+        // Log the cancel action
+        await internalDB.addAction({
+          action_type: 'task_cancelled',
+          task_id: task.local_id,
+          task_name: task.name,
+          details: `Cancelled at ${new Date().toLocaleTimeString()}`
+        })
+        
+        // Update local state
+        setInternalTasks(prev => prev.map(t => 
+          t.local_id === task.local_id 
+            ? { ...t, status: 'cancelled', cancelled_at: cancelledAt }
+            : t
+        ))
+        
+        console.log(`❌ Cancelled task: ${task.name}`)
+      } catch (error) {
+        console.error('❌ Error cancelling task:', error)
+      }
+    }
+  }
+
+  const handleResumeTask = async (task: Task) => {
+    if (task.user_id === 'internal_user') {
+      try {
+        // Update database first
+        await internalDB.updateTask(task.local_id, { 
+          status: 'in_progress',
+          paused_at: undefined // Clear pause timestamp
+        })
+        
+        // Log the resume action
+        await internalDB.addAction({
+          action_type: 'task_resumed',
+          task_id: task.local_id,
+          task_name: task.name,
+          details: `Resumed at ${new Date().toLocaleTimeString()}`
+        })
+        
+        // Update local state
+        setInternalTasks(prev => prev.map(t => 
+          t.local_id === task.local_id 
+            ? { ...t, status: 'in_progress', paused_at: undefined }
+            : t
+        ))
+        
+        console.log(`▶️ Resumed task: ${task.name}`)
+      } catch (error) {
+        console.error('❌ Error resuming task:', error)
+      }
+    }
+  }
+
+  const handleLongPress = (task: Task) => {
+    // Show context menu for running or paused tasks
+    if (task.status === 'in_progress' || task.status === 'paused') {
+      setContextMenuTask(task)
+      setShowContextMenu(true)
+    }
+  }
+
+  const closeContextMenu = () => {
+    setShowContextMenu(false)
+    setContextMenuTask(null)
+  }
+
+  const handleContextMenuAction = async (action: 'complete' | 'pause' | 'cancel' | 'resume') => {
+    if (!contextMenuTask) return
+    
+    closeContextMenu()
+    
+    switch (action) {
+      case 'complete':
+        await handleCompleteTask(contextMenuTask)
+        break
+      case 'pause':
+        await handlePauseTask(contextMenuTask)
+        break
+      case 'cancel':
+        await handleCancelTask(contextMenuTask)
+        break
+      case 'resume':
+        await handleResumeTask(contextMenuTask)
+        break
+    }
+  }
+
   const handleQuickAddTask = () => {
     setTaskInputText('')
     setShowTaskInput(true)
@@ -794,7 +1162,10 @@ export default function ScheduleScreen() {
         refreshControl={
           <RefreshControl 
             refreshing={false} 
-            onRefresh={loadInternalTasks} 
+            onRefresh={() => {
+              console.log('📱 Manual refresh triggered')
+              loadTimelineData() // This will clear tasks and load fresh timeline data
+            }} 
           />
         }
       >
@@ -828,13 +1199,18 @@ export default function ScheduleScreen() {
         <View style={styles.currentSection}>
           <Text style={styles.sectionTitle}>Now</Text>
           {currentTask ? (
-            <Animated.View style={[
-              styles.currentCard, 
-              currentTaskRemaining.readyToComplete && !currentTaskRemaining.isOvertime && styles.readyToCompleteCard,
-              currentTaskRemaining.isOvertime && styles.overtimeCard,
-              currentTask?.status === 'completed' && styles.completedCard,
-              { opacity: fadeAnim }
-            ]}>
+            <TouchableOpacity
+              onLongPress={() => handleLongPress(currentTask)}
+              delayLongPress={500}
+              activeOpacity={0.8}
+            >
+              <Animated.View style={[
+                styles.currentCard, 
+                currentTaskRemaining.readyToComplete && !currentTaskRemaining.isOvertime && styles.readyToCompleteCard,
+                currentTaskRemaining.isOvertime && styles.overtimeCard,
+                currentTask?.status === 'completed' && styles.completedCard,
+                { opacity: fadeAnim }
+              ]}>
               <Text style={styles.currentTaskName}>{currentTask.name}</Text>
               <Text style={styles.currentTaskTime}>
                 {formatTaskTime(currentTask.start_time!)} - {formatTaskTime(currentTask.end_time!)}
@@ -883,7 +1259,8 @@ export default function ScheduleScreen() {
                   )}
                 </>
               )}
-            </Animated.View>
+              </Animated.View>
+            </TouchableOpacity>
           ) : (
             <View style={styles.freeTimeCard}>
               <FontAwesome name="coffee" size={32} color="#999" style={styles.freeTimeIcon} />
@@ -899,6 +1276,40 @@ export default function ScheduleScreen() {
           )}
         </View>
 
+        {/* Paused Tasks Section */}
+        {pausedTasks.length > 0 && (
+          <View style={styles.pausedSection}>
+            <Text style={styles.sectionTitle}>Paused Tasks</Text>
+            {pausedTasks.map((task) => (
+              <View key={task.local_id} style={styles.pausedCard}>
+                <TouchableOpacity
+                  onLongPress={() => handleLongPress(task)}
+                  delayLongPress={500}
+                  activeOpacity={0.8}
+                  style={styles.pausedCardContent}
+                >
+                  <View style={styles.pausedTaskInfo}>
+                    <Text style={styles.pausedTaskName}>{task.name}</Text>
+                    <Text style={styles.pausedTaskTime}>
+                      {formatTaskTime(task.start_time!)} - {formatTaskTime(task.end_time!)}
+                    </Text>
+                    <Text style={styles.pausedTaskStatus}>
+                      Paused at {task.paused_at ? new Date(task.paused_at).toLocaleTimeString() : 'unknown time'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.resumeButton}
+                    onPress={() => handleResumeTask(task)}
+                  >
+                    <FontAwesome name="play" size={16} color="#fff" />
+                    <Text style={styles.resumeButtonText}>Resume</Text>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Next Task Section */}
         {nextTask && !shouldTaskStartNow(nextTask) && (
           <View style={styles.nextSection}>
@@ -910,7 +1321,7 @@ export default function ScheduleScreen() {
                   {formatTaskTime(nextTask.start_time!)} - {formatTaskTime(nextTask.end_time!)}
                 </Text>
                 <Text style={styles.aboutToStartText}>
-                  Starting in {Math.ceil((new Date(nextTask.start_time!).getTime() - currentTime.getTime()) / 1000)}s
+                  Starting in {formatTimeUntil(new Date(nextTask.start_time!).getTime() - currentTime.getTime())}
                 </Text>
               </View>
             </View>
@@ -933,8 +1344,6 @@ export default function ScheduleScreen() {
                 .slice(0, 5)
                 .map((task, index) => {
                   const timeUntilTask = new Date(task.start_time!).getTime() - currentTime.getTime()
-                  const hoursUntil = Math.floor(timeUntilTask / (1000 * 60 * 60))
-                  const minutesUntil = Math.floor((timeUntilTask % (1000 * 60 * 60)) / (1000 * 60))
                   
                   return (
                     <TouchableOpacity
@@ -947,11 +1356,7 @@ export default function ScheduleScreen() {
                           {formatTaskTime(task.start_time!)} - {formatTaskTime(task.end_time!)}
                         </Text>
                         <Text style={styles.upcomingTimeUntil}>
-                          {timeUntilTask > 0 ? (
-                            hoursUntil > 0 ? 
-                              `in ${hoursUntil}h ${minutesUntil}m` : 
-                              `in ${minutesUntil}m`
-                          ) : 'Starting soon'}
+                          in {formatTimeUntil(timeUntilTask)}
                         </Text>
                       </View>
                       <View style={styles.upcomingIndicator}>
@@ -1100,6 +1505,74 @@ export default function ScheduleScreen() {
               </View>
             </TouchableOpacity>
           </KeyboardAvoidingView>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Context Menu Modal */}
+      <Modal
+        visible={showContextMenu}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={closeContextMenu}
+      >
+        <TouchableOpacity 
+          style={styles.contextMenuOverlay}
+          activeOpacity={1}
+          onPress={closeContextMenu}
+        >
+          <View style={styles.contextMenuContainer}>
+            <View style={styles.contextMenuHeader}>
+              <Text style={styles.contextMenuTitle}>
+                {contextMenuTask?.name}
+              </Text>
+              <Text style={styles.contextMenuSubtitle}>Choose an action</Text>
+            </View>
+            
+            {contextMenuTask?.status === 'in_progress' && (
+              <>
+                <TouchableOpacity
+                  style={[styles.contextMenuItem, styles.completeMenuItem]}
+                  onPress={() => handleContextMenuAction('complete')}
+                >
+                  <FontAwesome name="check" size={20} color="#fff" />
+                  <Text style={[styles.contextMenuText, styles.completeMenuText]}>Complete Task</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.contextMenuItem, styles.pauseMenuItem]}
+                  onPress={() => handleContextMenuAction('pause')}
+                >
+                  <FontAwesome name="pause" size={20} color="#fff" />
+                  <Text style={[styles.contextMenuText, styles.pauseMenuText]}>Pause Task</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            
+            {contextMenuTask?.status === 'paused' && (
+              <TouchableOpacity
+                style={[styles.contextMenuItem, styles.resumeMenuItem]}
+                onPress={() => handleContextMenuAction('resume')}
+              >
+                <FontAwesome name="play" size={20} color="#fff" />
+                <Text style={[styles.contextMenuText, styles.resumeMenuText]}>Resume Task</Text>
+              </TouchableOpacity>
+            )}
+            
+            <TouchableOpacity
+              style={[styles.contextMenuItem, styles.cancelMenuItem]}
+              onPress={() => handleContextMenuAction('cancel')}
+            >
+              <FontAwesome name="times" size={20} color="#fff" />
+              <Text style={[styles.contextMenuText, styles.cancelMenuText]}>Cancel Task</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.contextMenuItem, styles.dismissMenuItem]}
+              onPress={closeContextMenu}
+            >
+              <Text style={styles.dismissMenuText}>Dismiss</Text>
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
       </Modal>
 
@@ -1705,5 +2178,140 @@ const styles = StyleSheet.create({
   exampleText: {
     fontSize: 14,
     color: '#666',
+  },
+  // Context Menu Styles
+  contextMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contextMenuContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    margin: 20,
+    padding: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    minWidth: 280,
+  },
+  contextMenuHeader: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  contextMenuTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  contextMenuSubtitle: {
+    fontSize: 14,
+    color: '#666',
+  },
+  contextMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  contextMenuText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 12,
+  },
+  completeMenuItem: {
+    backgroundColor: '#4CAF50',
+  },
+  completeMenuText: {
+    color: '#fff',
+  },
+  pauseMenuItem: {
+    backgroundColor: '#FF9800',
+  },
+  pauseMenuText: {
+    color: '#fff',
+  },
+  cancelMenuItem: {
+    backgroundColor: '#f44336',
+  },
+  cancelMenuText: {
+    color: '#fff',
+  },
+  resumeMenuItem: {
+    backgroundColor: '#4CAF50',
+  },
+  resumeMenuText: {
+    color: '#fff',
+  },
+  dismissMenuItem: {
+    backgroundColor: '#f8f9fa',
+    borderBottomWidth: 0,
+  },
+  dismissMenuText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    flex: 1,
+  },
+  // Paused Tasks Styles
+  pausedSection: {
+    margin: 16,
+    marginBottom: 8,
+  },
+  pausedCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  pausedCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  pausedTaskInfo: {
+    flex: 1,
+  },
+  pausedTaskName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  pausedTaskTime: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  pausedTaskStatus: {
+    fontSize: 12,
+    color: '#FF9800',
+    fontStyle: 'italic',
+  },
+  resumeButton: {
+    backgroundColor: '#4CAF50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  resumeButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
   },
 })
