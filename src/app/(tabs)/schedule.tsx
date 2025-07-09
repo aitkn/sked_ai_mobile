@@ -1074,6 +1074,143 @@ export default function ScheduleScreen() {
     }
   }
 
+  // Mock AI processing function
+  const mockAIProcessing = async (prompt: string) => {
+    console.log('🤖 Mock AI processing prompt:', prompt)
+    
+    // Simulate AI processing delay
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    
+    // Parse prompt to extract task details (enhanced mock logic)
+    const now = new Date()
+    let taskName = prompt
+    let durationMinutes = 30 // default
+    let startTime = new Date(now.getTime() + 5 * 60 * 1000) // 5 minutes from now
+    let taskType = 'work'
+    let priority = 'medium'
+    
+    // Extract duration from prompt
+    const durationMatch = prompt.match(/(\d+)\s*(min|minutes|hour|hours)/i)
+    if (durationMatch) {
+      const value = parseInt(durationMatch[1])
+      const unit = durationMatch[2].toLowerCase()
+      durationMinutes = unit.startsWith('hour') ? value * 60 : value
+    }
+    
+    // Extract start time from prompt
+    const startMatch = prompt.match(/(now|starting now|immediately|in (\d+) (min|minutes|hour|hours)|starting in (\d+) (min|minutes|hour|hours))/i)
+    if (startMatch) {
+      if (startMatch[1] === 'now' || startMatch[1] === 'starting now' || startMatch[1] === 'immediately') {
+        startTime = new Date()
+      } else if (startMatch[2]) {
+        const value = parseInt(startMatch[2])
+        const unit = startMatch[3].toLowerCase()
+        const offsetMs = unit.startsWith('hour') ? value * 60 * 60 * 1000 : value * 60 * 1000
+        startTime = new Date(now.getTime() + offsetMs)
+      } else if (startMatch[4]) {
+        const value = parseInt(startMatch[4])
+        const unit = startMatch[5].toLowerCase()
+        const offsetMs = unit.startsWith('hour') ? value * 60 * 60 * 1000 : value * 60 * 1000
+        startTime = new Date(now.getTime() + offsetMs)
+      }
+    }
+    
+    // Determine task type based on keywords
+    const lowerPrompt = prompt.toLowerCase()
+    if (lowerPrompt.includes('meeting') || lowerPrompt.includes('call') || lowerPrompt.includes('standup')) {
+      taskType = 'meeting'
+    } else if (lowerPrompt.includes('exercise') || lowerPrompt.includes('workout') || lowerPrompt.includes('gym')) {
+      taskType = 'exercise'
+    } else if (lowerPrompt.includes('read') || lowerPrompt.includes('study') || lowerPrompt.includes('learn')) {
+      taskType = 'learning'
+    } else if (lowerPrompt.includes('email') || lowerPrompt.includes('respond') || lowerPrompt.includes('reply')) {
+      taskType = 'communication'
+    } else if (lowerPrompt.includes('break') || lowerPrompt.includes('rest') || lowerPrompt.includes('lunch')) {
+      taskType = 'break'
+    }
+    
+    // Clean up task name by removing timing information
+    taskName = taskName
+      .replace(/(\d+)\s*(min|minutes|hour|hours)/gi, '')
+      .replace(/(now|starting now|immediately|in \d+ (min|minutes|hour|hours)|starting in \d+ (min|minutes|hour|hours))/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    
+    const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000)
+    
+    // Create main task
+    const mainTask = {
+      id: `task_${Date.now()}`,
+      name: taskName,
+      start_time: startTime.toISOString(),
+      end_time: endTime.toISOString(),
+      duration: durationMinutes * 60,
+      task_type: taskType,
+      priority: priority,
+      auto_generated: true
+    }
+    
+    // Create timeline with contextual tasks
+    const tasks = [mainTask]
+    
+    // Add preparation task for longer tasks
+    if (durationMinutes >= 30 && taskType !== 'break') {
+      const prepTime = new Date(startTime.getTime() - 10 * 60 * 1000)
+      if (prepTime > now) {
+        tasks.unshift({
+          id: `prep_${Date.now()}`,
+          name: `Prepare for ${taskName}`,
+          start_time: prepTime.toISOString(),
+          end_time: startTime.toISOString(),
+          duration: 600,
+          task_type: 'preparation',
+          priority: 'low',
+          auto_generated: true
+        })
+      }
+    }
+    
+    // Add break after the task (unless it's already a break)
+    if (taskType !== 'break') {
+      const breakDuration = durationMinutes >= 60 ? 20 : 15 // Longer break for longer tasks
+      tasks.push({
+        id: `break_${Date.now()}`,
+        name: 'Break',
+        start_time: endTime.toISOString(),
+        end_time: new Date(endTime.getTime() + breakDuration * 60 * 1000).toISOString(),
+        duration: breakDuration * 60,
+        task_type: 'break',
+        priority: 'low',
+        auto_generated: true
+      })
+    }
+    
+    // Add follow-up task for certain types
+    if (taskType === 'meeting') {
+      const followUpStart = new Date(endTime.getTime() + 15 * 60 * 1000)
+      tasks.push({
+        id: `followup_${Date.now()}`,
+        name: 'Meeting follow-up notes',
+        start_time: followUpStart.toISOString(),
+        end_time: new Date(followUpStart.getTime() + 10 * 60 * 1000).toISOString(),
+        duration: 600,
+        task_type: 'work',
+        priority: 'medium',
+        auto_generated: true
+      })
+    }
+    
+    const mockTimeline = {
+      tasks: tasks,
+      created_at: new Date().toISOString(),
+      description: `AI-generated timeline for: ${taskName}`,
+      total_tasks: tasks.length
+    }
+    
+    console.log('🤖 Mock AI generated timeline:', mockTimeline)
+    return mockTimeline
+  }
+
   const handleCreateTaskFromInput = async () => {
     if (!taskInputText.trim()) {
       Alert.alert('Error', 'Please enter a task description')
@@ -1128,21 +1265,53 @@ export default function ScheduleScreen() {
       setTaskInputText('')
       setShowTaskInput(false)
       
-      // Show processing indicator for 2 seconds
+      // Show processing indicator
       setShowProcessingIndicator(true)
-      setTimeout(() => {
-        setShowProcessingIndicator(false)
-      }, 2000)
+      
+      // Call mock AI processing
+      const mockTimeline = await mockAIProcessing(taskInputText.trim())
+      
+      // Since we can't write to user_timeline due to permissions, 
+      // we'll directly create the tasks in the internal database
+      console.log('🔍 Creating tasks directly in internal database...')
+      
+      // Clear existing tasks first
+      await internalDB.clearAllTasks()
+      
+      // Create tasks from the mock timeline
+      for (const task of mockTimeline.tasks) {
+        const internalTask = {
+          id: task.id,
+          name: task.name,
+          status: 'pending' as const,
+          start_time: task.start_time,
+          end_time: task.end_time,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        
+        await internalDB.saveTask(internalTask)
+        console.log('✅ Created task:', internalTask.name)
+      }
+      
+      console.log('✅ Mock timeline tasks created successfully')
+      
+      // Hide processing indicator
+      setShowProcessingIndicator(false)
+      
+      // Refresh the internal tasks to show the new tasks
+      await loadInternalTasks()
       
     } catch (error: any) {
-      console.error('❌ Error saving prompt:', error)
+      console.error('❌ Error processing prompt:', error)
       Alert.alert(
         'Error',
-        `Failed to save your prompt: ${error.message}`,
+        `Failed to process your prompt: ${error.message}`,
         [{ text: 'OK' }]
       )
     } finally {
       setIsProcessing(false)
+      setShowProcessingIndicator(false)
     }
   }
 
@@ -1152,7 +1321,7 @@ export default function ScheduleScreen() {
       {showProcessingIndicator && (
         <View style={styles.processingBanner}>
           <FontAwesome name="cog" size={16} color="#fff" style={styles.processingIcon} />
-          <Text style={styles.processingBannerText}>Processing your task request...</Text>
+          <Text style={styles.processingBannerText}>AI is analyzing your request and creating tasks...</Text>
         </View>
       )}
 

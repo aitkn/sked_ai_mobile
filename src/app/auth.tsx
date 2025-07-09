@@ -17,19 +17,27 @@ import { IS_DEVELOPMENT, TEST_ACCOUNTS } from '../config/constants'
 import { useRouter } from 'expo-router'
 import { makeRedirectUri } from 'expo-auth-session'
 import * as WebBrowser from 'expo-web-browser'
+import * as Linking from 'expo-linking'
 import { FontAwesome } from '@expo/vector-icons'
 // Conditionally import Google Sign-In to avoid errors in Expo Go
-let GoogleSignin: any;
-let GoogleSigninButton: any;
-let statusCodes: any;
+let GoogleSignin: any = null;
+let GoogleSigninButton: any = null;
+let statusCodes: any = null;
 
-try {
-  const googleSignIn = require('@react-native-google-signin/google-signin');
-  GoogleSignin = googleSignIn.GoogleSignin;
-  GoogleSigninButton = googleSignIn.GoogleSigninButton;
-  statusCodes = googleSignIn.statusCodes;
-} catch (error) {
-  console.log('Google Sign-In not available - using web OAuth flow');
+// Only try to import if we're not on web
+if (Platform.OS !== 'web') {
+  try {
+    const googleSignIn = require('@react-native-google-signin/google-signin');
+    GoogleSignin = googleSignIn.GoogleSignin;
+    GoogleSigninButton = googleSignIn.GoogleSigninButton;
+    statusCodes = googleSignIn.statusCodes;
+    console.log('✅ Google Sign-In native module loaded successfully');
+  } catch (error) {
+    console.log('📱 Google Sign-In native module not available - using web OAuth flow');
+    GoogleSignin = null;
+    GoogleSigninButton = null;
+    statusCodes = null;
+  }
 }
 
 WebBrowser.maybeCompleteAuthSession()
@@ -44,27 +52,63 @@ export default function Auth() {
   const redirectTo = makeRedirectUri({
     scheme: 'skedaiapp',
     path: 'auth-callback',
+    preferLocalhost: false,  // Force use of custom scheme
   })
+  
+  // For OAuth, we need to ensure the redirect goes back to the app, not website
+  const oauthRedirectTo = Platform.OS === 'web' 
+    ? `${window.location.origin}/auth-callback`
+    : redirectTo
+  
+  // Alternative redirect for testing if main one doesn't work
+  const deepLinkRedirect = 'skedaiapp://auth-callback'
+  
+  // HTTPS redirect that should work with OAuth providers
+  const httpsRedirect = 'https://api.skedai.com/auth/callback'
   
   // For debugging - show the redirect URI
   console.log('Redirect URI:', redirectTo)
+  console.log('OAuth Redirect URI:', oauthRedirectTo)
+  console.log('Deep Link Redirect:', deepLinkRedirect)
   console.log('Platform:', Platform.OS)
+  
+  // Test if the app scheme is working
+  useEffect(() => {
+    const testScheme = async () => {
+      try {
+        const canOpen = await Linking.canOpenURL('skedaiapp://test')
+        console.log('Can open skedaiapp:// scheme:', canOpen)
+      } catch (error) {
+        console.log('Error testing scheme:', error)
+      }
+    }
+    testScheme()
+  }, [])
 
   // Configure Google Sign-In if available
   useEffect(() => {
     // Skip Google Sign-In configuration on web or if not available
     if (Platform.OS === 'web' || !GoogleSignin) return
 
-    try {
-      GoogleSignin.configure({
-        scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
-        webClientId: '434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq.apps.googleusercontent.com', // TODO: Replace with your actual web client ID from Google Console
-        offlineAccess: true,
-        forceCodeForRefreshToken: true,
-      })
-    } catch (error) {
-      console.log('Error configuring Google Sign-In:', error)
+    const configureGoogleSignIn = async () => {
+      try {
+        // Test if the module is actually available
+        await GoogleSignin.configure({
+          scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
+          webClientId: '434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq.apps.googleusercontent.com', // TODO: Replace with your actual web client ID from Google Console
+          offlineAccess: true,
+          forceCodeForRefreshToken: true,
+        })
+        console.log('✅ Google Sign-In configured successfully')
+      } catch (error) {
+        console.log('❌ Google Sign-In configuration failed:', error)
+        console.log('📱 Falling back to web OAuth flow for Google Sign-In')
+        // Set GoogleSignin to null to force fallback to web OAuth
+        GoogleSignin = null
+      }
     }
+
+    configureGoogleSignIn()
   }, [])
 
   async function signInWithEmail() {
@@ -142,6 +186,13 @@ export default function Auth() {
         // Check if Google Play Services are available
         await GoogleSignin.hasPlayServices()
         
+        // Sign out first to clear any cached sessions and force account selection
+        try {
+          await GoogleSignin.signOut()
+        } catch (signOutError) {
+          console.log('No existing Google session to sign out from')
+        }
+        
         // Sign in with Google
         const userInfo = await GoogleSignin.signIn()
         console.log('Google sign-in response:', userInfo)
@@ -158,8 +209,9 @@ export default function Auth() {
             throw error
           }
           
-          console.log('Successfully authenticated with Supabase')
+          console.log('Successfully authenticated with Supabase:', data)
           // The auth state listener in _layout.tsx will handle navigation
+          // No need to manually navigate - the session change will trigger it
         } else {
           throw new Error('No ID token received from Google')
         }
@@ -168,11 +220,21 @@ export default function Auth() {
         
         if (error.code === statusCodes?.SIGN_IN_CANCELLED) {
           console.log('User cancelled the login flow')
+          // Don't show error for cancellation
         } else if (error.code === statusCodes?.IN_PROGRESS) {
           Alert.alert('Sign In In Progress', 'Please wait for the current sign-in to complete')
         } else if (error.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
           Alert.alert('Google Play Services Error', 'Google Play Services are not available or outdated')
         } else {
+          // Check if it's a module not found error
+          if (error.message?.includes('RNGoogleSignin') || error.message?.includes('TurboModuleRegistry')) {
+            console.log('❌ Google Sign-In module not available, falling back to web OAuth')
+            setLoading(false)
+            // Fall back to web OAuth flow
+            signInWithProvider('google')
+            return
+          }
+          
           Alert.alert(
             'Google Sign In Failed',
             error.message || 'An error occurred during Google sign-in',
@@ -191,64 +253,131 @@ export default function Auth() {
   }
 
   async function signInWithProvider(provider: 'google' | 'apple') {
+    console.log('🚀 Starting OAuth flow for:', provider)
     setLoading(true)
     try {
-      // This is now mainly used for web and Apple sign-in
+      console.log('📝 Calling supabase.auth.signInWithOAuth...')
+      // Final approach - force the OAuth to stay in app by handling it manually
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: redirectTo,
-          skipBrowserRedirect: Platform.OS !== 'web',
+          redirectTo: deepLinkRedirect,  // Use the deep link redirect instead of expo URL
+          skipBrowserRedirect: true,
+          queryParams: {
+            prompt: 'select_account',  // Force account selection for Google
+            access_type: 'offline',
+          },
         },
       })
       
-      if (error) throw error
+      console.log('📊 OAuth response:', { data, error })
+      
+      if (error) {
+        console.error('❌ OAuth error:', error)
+        throw error
+      }
       
       // On web, just redirect
       if (Platform.OS === 'web') {
+        console.log('🌐 Web platform - redirecting to:', data.url)
         window.location.href = data.url
         return
       }
       
-      // On mobile, use WebBrowser (for Apple sign-in)
+      console.log('📱 Mobile platform')
+      console.log('🔗 OAuth URL:', data.url)
+      console.log('🔄 Using Redirect URI:', deepLinkRedirect)
+      
+      // Manual OAuth flow - open browser and handle callback manually
+      console.log('🌐 Opening WebBrowser...')
       const res = await WebBrowser.openAuthSessionAsync(
         data?.url ?? '',
-        redirectTo,
+        deepLinkRedirect,
         {
-          showInRecents: true,
-          preferEphemeralSession: true,
+          showInRecents: false,
+          preferEphemeralSession: false,
         }
       )
       
+      console.log('📋 WebBrowser result:', res)
+      console.log('📋 WebBrowser result type:', res.type)
+      
       if (res.type === 'success') {
         const { url } = res
-        const responseUrl = new URL(url)
+        console.log('✅ OAuth success URL:', url)
         
-        // Check for error in response
-        const error = responseUrl.searchParams.get('error')
-        if (error) {
-          const errorDescription = responseUrl.searchParams.get('error_description')
-          throw new Error(errorDescription || error)
-        }
+        // If we get here, it means the OAuth worked and we have the callback URL
+        // Don't navigate to the website - handle the callback directly
         
-        // Handle the OAuth response
-        if (responseUrl.hash) {
-          const hashParams = new URLSearchParams(responseUrl.hash.substring(1))
-          const access_token = hashParams.get('access_token')
-          const refresh_token = hashParams.get('refresh_token')
+        try {
+          // Extract the URL parameters
+          const callbackUrl = new URL(url)
+          console.log('🔍 Parsing callback URL:', callbackUrl.href)
+          console.log('🔍 Search params:', callbackUrl.search)
+          console.log('🔍 Hash params:', callbackUrl.hash)
+          
+          const searchParams = new URLSearchParams(callbackUrl.search)
+          
+          // Also check hash parameters
+          if (callbackUrl.hash) {
+            const hashParams = new URLSearchParams(callbackUrl.hash.substring(1))
+            hashParams.forEach((value, key) => {
+              searchParams.set(key, value)
+            })
+          }
+          
+          // Get the authorization code or tokens
+          const code = searchParams.get('code')
+          const access_token = searchParams.get('access_token')
+          const refresh_token = searchParams.get('refresh_token')
+          const errorParam = searchParams.get('error')
+          
+          console.log('🔑 OAuth params:', {
+            code: code ? 'present' : 'missing',
+            access_token: access_token ? 'present' : 'missing',
+            refresh_token: refresh_token ? 'present' : 'missing',
+            error: errorParam
+          })
+          
+          if (errorParam) {
+            throw new Error(searchParams.get('error_description') || errorParam)
+          }
           
           if (access_token) {
-            await supabase.auth.setSession({
+            // Set session with tokens
+            console.log('🔐 Setting session with access token...')
+            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
               access_token,
               refresh_token: refresh_token || '',
             })
+            
+            if (sessionError) throw sessionError
+            console.log('✅ OAuth session set successfully!')
+            return
+          } else if (code) {
+            // Exchange code for session
+            console.log('🔄 Exchanging code for session...')
+            const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
+            
+            if (sessionError) throw sessionError
+            console.log('✅ OAuth session exchanged successfully!')
+            return
           }
-        } else if (responseUrl.searchParams.get('code')) {
-          const code = responseUrl.searchParams.get('code')
-          await supabase.auth.exchangeCodeForSession(code!)
+          
+          throw new Error('No valid authentication response received from OAuth')
+        } catch (urlError) {
+          console.error('🚨 Failed to parse OAuth callback URL:', urlError)
+          throw new Error('Failed to process OAuth response')
         }
+      } else if (res.type === 'cancel') {
+        console.log('❌ User cancelled OAuth flow')
+        return
+      } else {
+        console.log('❓ OAuth flow result:', res)
+        throw new Error('OAuth authentication was not completed')
       }
     } catch (error: any) {
+      console.error('OAuth error:', error)
       const providerName = provider.charAt(0).toUpperCase() + provider.slice(1)
       Alert.alert(
         `${providerName} Sign In Failed`,

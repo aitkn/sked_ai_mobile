@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  Platform,
 } from 'react-native'
 import { Text } from '@/components/Themed'
 import { FontAwesome } from '@expo/vector-icons'
@@ -14,6 +15,7 @@ import { supabase } from '@/lib/supabase'
 import { useFocusEffect } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
+import { Session, User } from '@supabase/supabase-js'
 
 // Timeline interfaces
 interface TimelineTask {
@@ -34,6 +36,10 @@ export default function DevScreen() {
   const [actions, setActions] = useState<InternalAction[]>([])
   const [loading, setLoading] = useState(false)
   
+  // Authentication state
+  const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  
   // Auto-import state
   const [autoImportEnabled, setAutoImportEnabled] = useState(true)
   const [lastImportTime, setLastImportTime] = useState<Date | null>(null)
@@ -48,6 +54,7 @@ export default function DevScreen() {
   useEffect(() => {
     loadTasks()
     loadActions()
+    loadUserSession()
     
     // Auto-refresh actions every 2 seconds to pick up notification actions
     const interval = setInterval(() => {
@@ -56,6 +63,19 @@ export default function DevScreen() {
     
     return () => clearInterval(interval)
   }, [])
+
+  // Load user session information
+  const loadUserSession = async () => {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error) throw error
+      
+      setSession(session)
+      setUser(session?.user || null)
+    } catch (error) {
+      console.error('Error loading user session:', error)
+    }
+  }
 
   // Initialize notification permissions and scheduled notifications
   useEffect(() => {
@@ -108,6 +128,7 @@ export default function DevScreen() {
     useCallback(() => {
       loadActions()
       loadTasks()
+      loadUserSession()
     }, [])
   )
 
@@ -222,6 +243,110 @@ export default function DevScreen() {
       ])
       console.error('❌ Auto-import failed:', error)
     }
+  }
+
+  // Sign out function
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true)
+              const { error } = await supabase.auth.signOut()
+              if (error) throw error
+              console.log('✅ Successfully signed out')
+              // Navigation will be handled by the auth state listener in _layout.tsx
+            } catch (error: any) {
+              console.error('❌ Sign out error:', error)
+              Alert.alert('Sign Out Error', error.message || 'Failed to sign out')
+            } finally {
+              setLoading(false)
+            }
+          }
+        }
+      ]
+    )
+  }
+
+  // Clear Google Sign-In cache
+  const handleClearGoogleCache = async () => {
+    Alert.alert(
+      'Clear Google Cache',
+      'This will clear any cached Google Sign-In sessions and force account selection on next sign-in.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Cache',
+          onPress: async () => {
+            try {
+              setLoading(true)
+              
+              // Check if we're on mobile and can use native Google Sign-In
+              if (Platform.OS !== 'web') {
+                // Try to import Google Sign-In native module
+                let GoogleSignin: any = null
+                try {
+                  const googleSignIn = require('@react-native-google-signin/google-signin')
+                  GoogleSignin = googleSignIn.GoogleSignin
+                  
+                  // Test if the module is actually available by trying to call a method
+                  if (GoogleSignin && typeof GoogleSignin.signOut === 'function') {
+                    try {
+                      // Sign out from Google to clear cache
+                      await GoogleSignin.signOut()
+                      console.log('✅ Google Sign-In native cache cleared')
+                      
+                      Alert.alert('Success', 'Google Sign-In cache has been cleared. You will need to select your account on next sign-in.')
+                      return
+                    } catch (signOutError: any) {
+                      // If it's a module error, fall through to web clearing
+                      if (signOutError.message?.includes('RNGoogleSignin') || signOutError.message?.includes('TurboModuleRegistry')) {
+                        console.log('Native module not available, using web clearing method')
+                      } else {
+                        console.error('❌ Error clearing native Google cache:', signOutError)
+                      }
+                    }
+                  }
+                } catch (error) {
+                  console.log('Native Google Sign-In not available, using web clearing method')
+                }
+              }
+              
+              // Fallback: Clear web storage and cookies
+              console.log('📱 Clearing web-based Google OAuth cache...')
+              
+              // Clear any stored auth tokens or session data
+              await AsyncStorage.multiRemove([
+                'google_oauth_token',
+                'google_refresh_token',
+                'last_google_user',
+                'google_account_hint'
+              ])
+              
+              // Sign out from Supabase to clear any cached sessions
+              await supabase.auth.signOut()
+              
+              Alert.alert(
+                'Cache Cleared', 
+                'Google Sign-In cache has been cleared. The web OAuth flow will now prompt for account selection on next sign-in.'
+              )
+              
+            } catch (error: any) {
+              console.error('❌ Error clearing Google cache:', error)
+              Alert.alert('Error', error.message || 'Failed to clear Google cache')
+            } finally {
+              setLoading(false)
+            }
+          }
+        }
+      ]
+    )
   }
 
   // Load scheduled notifications
@@ -783,6 +908,71 @@ export default function DevScreen() {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Authentication Info</Text>
+          <Text style={styles.sectionDescription}>
+            Current user session details and authentication controls
+          </Text>
+          
+          {session && user ? (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>User Details</Text>
+              <Text style={styles.infoText}>• ID: {user.id}</Text>
+              <Text style={styles.infoText}>• Email: {user.email}</Text>
+              <Text style={styles.infoText}>• Provider: {user.app_metadata?.provider || 'email'}</Text>
+              <Text style={styles.infoText}>• Created: {new Date(user.created_at).toLocaleString()}</Text>
+              <Text style={styles.infoText}>• Last Sign In: {new Date(user.last_sign_in_at).toLocaleString()}</Text>
+            </View>
+          ) : (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>Authentication Status</Text>
+              <Text style={styles.infoText}>Not authenticated</Text>
+            </View>
+          )}
+
+          {session && (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>Session Details</Text>
+              <Text style={styles.infoText}>• Token Type: {session.token_type}</Text>
+              <Text style={styles.infoText}>• Expires: {new Date(session.expires_at * 1000).toLocaleString()}</Text>
+              <Text style={styles.infoText}>• Refresh Token: {session.refresh_token ? 'Present' : 'Missing'}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity 
+            style={[styles.button, styles.signOutButton, loading && styles.disabledButton]} 
+            onPress={handleSignOut}
+            disabled={loading || !session}
+          >
+            <FontAwesome name="sign-out" size={16} color="#fff" />
+            <Text style={styles.buttonText}>
+              {loading ? 'Signing Out...' : 'Sign Out'}
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.button, styles.secondaryButton, loading && styles.disabledButton]} 
+            onPress={loadUserSession}
+            disabled={loading}
+          >
+            <FontAwesome name="refresh" size={16} color="#666" />
+            <Text style={styles.secondaryButtonText}>
+              {loading ? 'Refreshing...' : 'Refresh Session'}
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.button, styles.secondaryButton, loading && styles.disabledButton]} 
+            onPress={handleClearGoogleCache}
+            disabled={loading}
+          >
+            <FontAwesome name="google" size={16} color="#666" />
+            <Text style={styles.secondaryButtonText}>
+              {loading ? 'Clearing...' : 'Clear Google Cache'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Local Task Testing</Text>
           <Text style={styles.sectionDescription}>
             Tools for testing task functionality with local data
@@ -1326,5 +1516,8 @@ const styles = StyleSheet.create({
   notificationTime: {
     fontSize: 12,
     color: '#666',
+  },
+  signOutButton: {
+    backgroundColor: '#f44336',
   },
 })
