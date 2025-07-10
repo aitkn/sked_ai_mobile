@@ -287,46 +287,15 @@ export default function DevScreen() {
             try {
               setLoading(true)
               
-              // Check if we're on mobile and can use native Google Sign-In
-              if (Platform.OS !== 'web') {
-                // Try to import Google Sign-In native module
-                let GoogleSignin: any = null
-                try {
-                  const googleSignIn = require('@react-native-google-signin/google-signin')
-                  GoogleSignin = googleSignIn.GoogleSignin
-                  
-                  // Test if the module is actually available by trying to call a method
-                  if (GoogleSignin && typeof GoogleSignin.signOut === 'function') {
-                    try {
-                      // Sign out from Google to clear cache
-                      await GoogleSignin.signOut()
-                      console.log('✅ Google Sign-In native cache cleared')
-                      
-                      Alert.alert('Success', 'Google Sign-In cache has been cleared. You will need to select your account on next sign-in.')
-                      return
-                    } catch (signOutError: any) {
-                      // If it's a module error, fall through to web clearing
-                      if (signOutError.message?.includes('RNGoogleSignin') || signOutError.message?.includes('TurboModuleRegistry')) {
-                        console.log('Native module not available, using web clearing method')
-                      } else {
-                        console.error('❌ Error clearing native Google cache:', signOutError)
-                      }
-                    }
-                  }
-                } catch (error) {
-                  console.log('Native Google Sign-In not available, using web clearing method')
-                }
-              }
-              
-              // Fallback: Clear web storage and cookies
-              console.log('📱 Clearing web-based Google OAuth cache...')
+              console.log('📱 Clearing Google OAuth cache...')
               
               // Clear any stored auth tokens or session data
               await AsyncStorage.multiRemove([
                 'google_oauth_token',
                 'google_refresh_token',
                 'last_google_user',
-                'google_account_hint'
+                'google_account_hint',
+                'supabase.auth.token'
               ])
               
               // Sign out from Supabase to clear any cached sessions
@@ -334,7 +303,7 @@ export default function DevScreen() {
               
               Alert.alert(
                 'Cache Cleared', 
-                'Google Sign-In cache has been cleared. The web OAuth flow will now prompt for account selection on next sign-in.'
+                'Google Sign-In cache has been cleared. The OAuth flow will now prompt for account selection on next sign-in.'
               )
               
             } catch (error: any) {

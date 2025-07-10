@@ -221,6 +221,8 @@ export default function Auth() {
         if (error.code === statusCodes?.SIGN_IN_CANCELLED) {
           console.log('User cancelled the login flow')
           // Don't show error for cancellation
+          setLoading(false)
+          return
         } else if (error.code === statusCodes?.IN_PROGRESS) {
           Alert.alert('Sign In In Progress', 'Please wait for the current sign-in to complete')
         } else if (error.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
@@ -371,6 +373,7 @@ export default function Auth() {
         }
       } else if (res.type === 'cancel') {
         console.log('❌ User cancelled OAuth flow')
+        setLoading(false)
         return
       } else {
         console.log('❓ OAuth flow result:', res)
