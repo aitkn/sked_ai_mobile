@@ -44,6 +44,7 @@ export class TimelineGenerator {
    */
   async getExistingTimeline(userId) {
     const { data, error } = await this.supabase
+      .schema(DATABASE_CONFIG.SCHEMA)
       .from(DATABASE_CONFIG.TABLES.USER_TIMELINE)
       .select('*')
       .eq('user_id', userId)
@@ -78,16 +79,26 @@ export class TimelineGenerator {
     let timelineTasks = []
     
     if (existingTimeline && existingTimeline.timeline_json && existingTimeline.timeline_json.tasks) {
-      // Start with existing tasks, filtering out old/completed ones
+      // Start with existing tasks, filtering out old/completed ones and break tasks
       const now = new Date()
+      const originalTaskCount = existingTimeline.timeline_json.tasks.length
       timelineTasks = existingTimeline.timeline_json.tasks.filter(task => {
         const taskEndTime = new Date(task.end_time)
-        return taskEndTime > now // Only keep future tasks
+        // Only keep future tasks that are NOT break tasks AND don't have the same task_id as the new task
+        return taskEndTime > now && task.task_type !== 'break' && task.task_id !== newTask.task_id
       })
+      
+      console.log(`🧹 Filtered timeline: ${originalTaskCount} → ${timelineTasks.length} tasks (removed past tasks, breaks, and duplicates)`)
     }
 
-    // Add the new task
-    timelineTasks.push(newTask)
+    // Add the new task (only if not already in the timeline)
+    const existingTaskIndex = timelineTasks.findIndex(task => task.task_id === newTask.task_id)
+    if (existingTaskIndex === -1) {
+      timelineTasks.push(newTask)
+      console.log(`➕ Added new task to timeline: ${newTask.name}`)
+    } else {
+      console.log(`⚠️ Task already exists in timeline, skipping: ${newTask.name}`)
+    }
 
     // Sort tasks by start time
     timelineTasks.sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
@@ -163,18 +174,7 @@ export class TimelineGenerator {
       })
     }
 
-    // Add a break after the task
-    const breakStart = new Date(newTaskEnd.getTime())
-    const breakEnd = new Date(breakStart.getTime() + 15 * 60 * 1000) // 15 min break
-    contextTasks.push({
-      name: 'Break',
-      start_time: breakStart.toISOString(),
-      end_time: breakEnd.toISOString(),
-      duration: 900, // 15 minutes
-      task_type: 'break',
-      priority: 'low',
-      auto_generated: true
-    })
+    // Note: Automatic break scheduling removed - users can manually add breaks if needed
 
     // Merge context tasks with main tasks and sort
     const allTasks = [...tasks, ...contextTasks]
@@ -193,6 +193,7 @@ export class TimelineGenerator {
     }
     
     const { data, error } = await this.supabase
+      .schema(DATABASE_CONFIG.SCHEMA)
       .from(DATABASE_CONFIG.TABLES.USER_TIMELINE)
       .insert(timelineData)
       .select()
@@ -228,6 +229,7 @@ export class TimelineGenerator {
     }
     
     const { data, error } = await this.supabase
+      .schema(DATABASE_CONFIG.SCHEMA)
       .from(DATABASE_CONFIG.TABLES.USER_TIMELINE)
       .insert(timelineData)
       .select()

@@ -25,7 +25,7 @@ export class SolutionGenerator {
       const modelId = await this.createModelRecord(task, taskAnalysis)
       
       // Step 4: Save solution to database
-      const solution = await this.saveSolution(modelId, schedule)
+      const solution = await this.saveSolution(modelId, schedule, taskAnalysis)
       
       console.log(`✅ Solution generated for task ${task.name} with model_id: ${modelId}`)
       
@@ -171,6 +171,7 @@ export class SolutionGenerator {
     }
     
     const { data, error } = await this.supabase
+      .schema(DATABASE_CONFIG.SCHEMA)
       .from(DATABASE_CONFIG.TABLES.MODEL)
       .insert(modelData)
       .select('model_id')
@@ -179,7 +180,6 @@ export class SolutionGenerator {
     if (error) {
       throw new Error(`Failed to create model record: ${error.message}`)
     }
-    
     return data.model_id
   }
 
@@ -195,13 +195,31 @@ export class SolutionGenerator {
   /**
    * Save solution to database
    */
-  async saveSolution(modelId, schedule) {
-    // Generate a mock solution_score_id (in real system this would come from scoring service)
-    const mockSolutionScoreId = crypto.randomUUID()
+  async saveSolution(modelId, schedule, taskAnalysis) {
+    // First, create a solution_score record with the correct schema
+    const solutionScoreData = {
+      model_id: modelId,
+      time_from_start: 0, // Mock value - time when solution was generated
+      score: schedule.confidence,
+      upper_bound: 1.0, // Mock upper bound value
+      is_optimal: schedule.confidence > 0.8
+    }
     
+    const { data: scoreData, error: scoreError } = await this.supabase
+      .schema(DATABASE_CONFIG.SCHEMA)
+      .from(DATABASE_CONFIG.TABLES.SOLUTION_SCORE)
+      .insert(solutionScoreData)
+      .select('solution_score_id')
+      .single()
+    
+    if (scoreError) {
+      throw new Error(`Failed to create solution score: ${scoreError.message || JSON.stringify(scoreError)}`)
+    }
+    
+    // Then create the solution with the actual solution_score_id
     const solutionData = {
       model_id: modelId,
-      solution_score_id: mockSolutionScoreId,
+      solution_score_id: scoreData.solution_score_id,
       solution_json: {
         schedule: schedule,
         algorithm: 'mock_ai_v1',
@@ -214,6 +232,7 @@ export class SolutionGenerator {
     }
     
     const { data, error } = await this.supabase
+      .schema(DATABASE_CONFIG.SCHEMA)
       .from(DATABASE_CONFIG.TABLES.SOLUTION)
       .insert(solutionData)
       .select()
@@ -222,7 +241,6 @@ export class SolutionGenerator {
     if (error) {
       throw new Error(`Failed to save solution: ${error.message}`)
     }
-    
     return data
   }
 }

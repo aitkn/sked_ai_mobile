@@ -58,6 +58,15 @@ export class RealtimeService {
       })
       .subscribe((status) => {
         console.log(`📡 Timeline channel status: ${status}`)
+        if (status === 'SUBSCRIBED') {
+          console.log(`✅ Timeline channel successfully connected`)
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(`❌ Timeline channel error`)
+        } else if (status === 'TIMED_OUT') {
+          console.error(`⏰ Timeline channel connection timed out`)
+        } else if (status === 'CLOSED') {
+          console.warn(`📴 Timeline channel closed`)
+        }
       })
 
     this.channels.set(channelName, channel)
@@ -78,6 +87,15 @@ export class RealtimeService {
       })
       .subscribe((status) => {
         console.log(`📡 Processing channel status: ${status}`)
+        if (status === 'SUBSCRIBED') {
+          console.log(`✅ Processing channel successfully connected`)
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(`❌ Processing channel error`)
+        } else if (status === 'TIMED_OUT') {
+          console.error(`⏰ Processing channel connection timed out`)
+        } else if (status === 'CLOSED') {
+          console.warn(`📴 Processing channel closed`)
+        }
       })
 
     this.channels.set(channelName, channel)
@@ -91,9 +109,34 @@ export class RealtimeService {
     // Monitor connection status with heartbeat
     setInterval(() => {
       this.checkConnectionHealth()
-    }, 30000) // Check every 30 seconds
+    }, 60000) // Check every 60 seconds (reduced from 30s to avoid spam)
 
     console.log('💓 Connection monitoring setup complete')
+  }
+
+  /**
+   * Provide detailed connection diagnostics
+   */
+  getConnectionDiagnostics() {
+    const diagnostics = {
+      totalChannels: this.channels.size,
+      connectedChannels: 0,
+      channels: {},
+      connectionAttempts: this.connectionAttempts,
+      maxRetries: this.maxRetries
+    }
+
+    for (const [channelName, channel] of this.channels) {
+      const isConnected = ['joined', 'subscribed'].includes(channel.state)
+      if (isConnected) diagnostics.connectedChannels++
+      
+      diagnostics.channels[channelName] = {
+        state: channel.state,
+        connected: isConnected
+      }
+    }
+
+    return diagnostics
   }
 
   /**
@@ -236,24 +279,70 @@ export class RealtimeService {
   }
 
   /**
-   * Check connection health
+   * Check connection health and attempt reconnection if needed
    */
   checkConnectionHealth() {
     const channelCount = this.channels.size
     const connectedChannels = Array.from(this.channels.values()).filter(
-      channel => channel.state === 'joined'
+      channel => ['joined', 'subscribed'].includes(channel.state)
     ).length
 
     if (connectedChannels < channelCount) {
       console.warn(`⚠️ Connection health warning: ${connectedChannels}/${channelCount} channels connected`)
       
-      // Attempt to reconnect if too many failures
+      // Log individual channel states for debugging
+      for (const [channelName, channel] of this.channels) {
+        console.log(`📡 Channel "${channelName}" state: ${channel.state}`)
+      }
+      
       this.connectionAttempts++
-      if (this.connectionAttempts >= this.maxRetries) {
+      
+      if (this.connectionAttempts <= this.maxRetries) {
+        console.log(`🔄 Attempting reconnection (${this.connectionAttempts}/${this.maxRetries})`)
+        this.reconnectChannels()
+      } else {
         console.error('❌ Max connection attempts reached, service may be degraded')
+        console.error('💡 Consider restarting the task processor or checking Supabase connectivity')
       }
     } else {
       this.connectionAttempts = 0 // Reset on successful connection
+      if (connectedChannels > 0) {
+        console.log(`✅ All channels healthy: ${connectedChannels}/${channelCount} connected`)
+      }
+    }
+  }
+
+  /**
+   * Attempt to reconnect disconnected channels
+   */
+  async reconnectChannels() {
+    console.log('🔄 Attempting to reconnect disconnected channels...')
+    
+    for (const [channelName, channel] of this.channels) {
+      try {
+        if (!['joined', 'subscribed'].includes(channel.state)) {
+          console.log(`🔄 Reconnecting channel: ${channelName} (current state: ${channel.state})`)
+          
+          // Unsubscribe first to clean up
+          if (channel.state !== 'closed') {
+            await channel.unsubscribe()
+          }
+          
+          // Wait a moment before reconnecting
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          
+          // Recreate the channel based on its name
+          if (channelName === NOTIFICATION_CONFIG.REALTIME_CHANNELS.TIMELINE_UPDATES) {
+            await this.setupTimelineChannel()
+          } else if (channelName === NOTIFICATION_CONFIG.REALTIME_CHANNELS.TASK_PROCESSING) {
+            await this.setupProcessingChannel()
+          }
+          
+          console.log(`✅ Successfully reconnected channel: ${channelName}`)
+        }
+      } catch (error) {
+        console.error(`❌ Failed to reconnect channel ${channelName}:`, error.message)
+      }
     }
   }
 

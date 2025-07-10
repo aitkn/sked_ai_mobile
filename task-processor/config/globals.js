@@ -29,6 +29,8 @@ export const DATABASE_CONFIG = {
     SOLUTION: 'solution',
     USER_TIMELINE: 'user_timeline',
     MODEL: 'model',
+    SOLUTION_SCORE: 'solution_score',
+    USER_PROMPT: 'user_prompt',
   }
 }
 
