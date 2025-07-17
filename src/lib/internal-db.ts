@@ -8,6 +8,7 @@ export interface InternalTask {
   end_time: string   // ISO string
   duration: number   // duration in seconds
   status: 'pending' | 'in_progress' | 'completed' | 'paused' | 'cancelled' // task status
+  priority: 'low' | 'medium' | 'high' // task importance
   completed_at?: string // ISO string, optional
   paused_at?: string // ISO string, optional
   cancelled_at?: string // ISO string, optional
@@ -177,6 +178,7 @@ export class InternalDB {
         end_time: taskData.end_time,
         duration: taskData.duration || InternalDB.calculateDuration(taskData.start_time, taskData.end_time),
         status: taskData.status || 'pending',
+        priority: taskData.priority || 'medium',
         completed_at: taskData.completed_at,
         created_at: taskData.created_at || now,
         updated_at: now,
@@ -260,6 +262,7 @@ export class InternalDB {
       end_time: endTime,
       duration,
       status: 'pending',
+      priority: 'medium',
     })
 
     // Note: Task creation is a dev/testing feature, not tracked as user action

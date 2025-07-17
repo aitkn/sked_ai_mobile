@@ -104,14 +104,19 @@ export class SyncService {
           }
         } else if (task.task_id) {
           // Update existing task
+          // Include end_time in task_json if it exists
+          const taskJson = {
+            ...(task.task_json || {}),
+            start_time: task.start_time,
+            end_time: task.end_time,
+          }
+          
           const { error } = await supabase
             .from('tasks')
             .update({
               name: task.name,
-              task_json: task.task_json,
+              task_json: taskJson,
               status: task.status,
-              start_time: task.start_time,
-              end_time: task.end_time,
               due_at: task.due_at,
               reminder_at: task.reminder_at,
               completed_at: task.completed_at,
@@ -134,16 +139,21 @@ export class SyncService {
             task.task_id = existingTask.task_id
           } else {
             // Create new task
+            // Include end_time in task_json if it exists
+            const taskJson = {
+              ...(task.task_json || {}),
+              start_time: task.start_time,
+              end_time: task.end_time,
+            }
+            
             const { data, error } = await supabase
               .from('tasks')
               .insert({
                 user_id: userId,
                 name: task.name,
-                task_json: task.task_json,
+                task_json: taskJson,
                 status: task.status,
-                start_time: task.start_time,
-                end_time: task.end_time,
-                due_at: task.due_at,
+                  due_at: task.due_at,
                 reminder_at: task.reminder_at,
                 completed_at: task.completed_at,
                 priority: task.priority,
@@ -212,6 +222,11 @@ export class SyncService {
       }
 
       // Apply remote changes
+      // Extract start_time and end_time from task_json if they exist
+      const taskJson = remoteTask.task_json || {}
+      const startTime = taskJson.start_time
+      const endTime = taskJson.end_time
+      
       const task: Task = {
         id: remoteTask.task_id,
         task_id: remoteTask.task_id,
@@ -220,6 +235,8 @@ export class SyncService {
         name: remoteTask.name,
         task_json: remoteTask.task_json,
         status: remoteTask.status,
+        start_time: startTime,
+        end_time: endTime,
         due_at: remoteTask.due_at,
         reminder_at: remoteTask.reminder_at,
         completed_at: remoteTask.completed_at,

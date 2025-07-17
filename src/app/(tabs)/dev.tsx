@@ -9,7 +9,8 @@ import {
 import { Text } from '@/components/Themed'
 import { FontAwesome } from '@expo/vector-icons'
 import Colors from '@/constants/Colors'
-import { internalDB, InternalTask, InternalAction } from '@/lib/internal-db'
+import { useTheme } from '@/contexts/ThemeContext'
+import { internalDB, InternalTask, InternalAction, InternalDB } from '@/lib/internal-db'
 import { supabase } from '@/lib/supabase'
 import { useFocusEffect } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -17,10 +18,12 @@ import * as Notifications from 'expo-notifications'
 
 // Timeline interfaces
 interface TimelineTask {
+  id?: string
   name: string
   start_time: string
   end_time: string
   duration: number // in seconds
+  priority?: 'low' | 'medium' | 'high'
 }
 
 interface TimelineData {
@@ -30,6 +33,7 @@ interface TimelineData {
 }
 
 export default function DevScreen() {
+  const { actualTheme, colors } = useTheme()
   const [tasks, setTasks] = useState<InternalTask[]>([])
   const [actions, setActions] = useState<InternalAction[]>([])
   const [loading, setLoading] = useState(false)
@@ -194,16 +198,36 @@ export default function DevScreen() {
       
       // Import each task from the timeline
       let importedCount = 0
+      const now = new Date()
+      
+      // Get the date from the first task to calculate offset
+      const firstTaskDate = timelineData.tasks.length > 0 
+        ? new Date(timelineData.tasks[0].start_time) 
+        : now
+      
+      // Calculate the time offset to adjust tasks to today
+      const originalDate = new Date(firstTaskDate)
+      originalDate.setHours(0, 0, 0, 0)
+      const todayDate = new Date(now)
+      todayDate.setHours(0, 0, 0, 0)
+      const dayOffset = todayDate.getTime() - originalDate.getTime()
+      
       for (const timelineTask of timelineData.tasks) {
+        // Adjust the task times to today
+        const originalStart = new Date(timelineTask.start_time)
+        const originalEnd = new Date(timelineTask.end_time)
+        
+        const adjustedStart = new Date(originalStart.getTime() + dayOffset)
+        const adjustedEnd = new Date(originalEnd.getTime() + dayOffset)
+        
         await internalDB.addTaskWithDuration(
           timelineTask.name,
-          timelineTask.start_time,
-          timelineTask.end_time
+          adjustedStart.toISOString(),
+          adjustedEnd.toISOString()
         )
         importedCount++
       }
       
-      const now = new Date()
       setLastImportTime(now)
       setImportHistory(prev => [
         { timestamp: now, success: true, message: `Imported ${importedCount} tasks` },
@@ -577,25 +601,42 @@ export default function DevScreen() {
       console.log('Creating local timeline simulation...')
       
       const now = new Date()
+      // Create tasks for today with specific times
+      const today = new Date();
+      const morning = new Date(today);
+      morning.setHours(8, 0, 0, 0); // 8:00 AM
+      
+      const breakfast = new Date(today);
+      breakfast.setHours(9, 0, 0, 0); // 9:00 AM
+      
+      const work = new Date(today);
+      work.setHours(10, 0, 0, 0); // 10:00 AM
+      
       const sampleTimeline: TimelineData = {
         tasks: [
           {
+            id: `task_${Date.now()}_1`,
             name: "Morning Workout",
-            start_time: new Date(now.getTime() + 30 * 1000).toISOString(),
-            end_time: new Date(now.getTime() + 60 * 1000).toISOString(),
-            duration: 30
+            start_time: morning.toISOString(),
+            end_time: new Date(morning.getTime() + 60 * 60 * 1000).toISOString(), // 1 hour
+            duration: 3600,
+            priority: 'high'
           },
           {
+            id: `task_${Date.now()}_2`,
             name: "Breakfast",
-            start_time: new Date(now.getTime() + 90 * 1000).toISOString(),
-            end_time: new Date(now.getTime() + 120 * 1000).toISOString(),
-            duration: 30
+            start_time: breakfast.toISOString(),
+            end_time: new Date(breakfast.getTime() + 30 * 60 * 1000).toISOString(), // 30 minutes
+            duration: 1800,
+            priority: 'medium'
           },
           {
+            id: `task_${Date.now()}_3`,
             name: "Work Session",
-            start_time: new Date(now.getTime() + 150 * 1000).toISOString(),
-            end_time: new Date(now.getTime() + 210 * 1000).toISOString(),
-            duration: 60
+            start_time: work.toISOString(),
+            end_time: new Date(work.getTime() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours
+            duration: 7200,
+            priority: 'high'
           }
         ],
         created_at: now.toISOString(),
@@ -694,14 +735,30 @@ export default function DevScreen() {
       const timelineData = JSON.parse(timelineDataStr) as TimelineData
       console.log('Found timeline data:', timelineData)
       
+      // Clear existing tasks before importing
+      await internalDB.clearAllTasks()
+      
       // Import each task from the timeline into the local database
       let importedCount = 0
+      const now = new Date()
+      
       for (const timelineTaskData of timelineData.tasks) {
-        await internalDB.addTaskWithDuration(
-          timelineTaskData.name,
-          timelineTaskData.start_time,
-          timelineTaskData.end_time
-        )
+        const taskId = timelineTaskData.id || `imported_${Date.now()}_${importedCount}`
+        
+        // Save task with all required fields
+        await internalDB.saveTask({
+          id: taskId,
+          name: timelineTaskData.name,
+          start_time: timelineTaskData.start_time,
+          end_time: timelineTaskData.end_time,
+          duration: timelineTaskData.duration || InternalDB.calculateDuration(timelineTaskData.start_time, timelineTaskData.end_time),
+          status: 'pending',
+          priority: timelineTaskData.priority || 'medium',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        
+        console.log(`✅ Imported task: ${timelineTaskData.name} at ${new Date(timelineTaskData.start_time).toLocaleString()}`)
         importedCount++
       }
       
@@ -751,11 +808,32 @@ export default function DevScreen() {
       
       // Import each task from the timeline into the local database
       let importedCount = 0
+      const now = new Date()
+      
+      // Get the date from the first task to calculate offset
+      const firstTaskDate = timelineData.tasks.length > 0 
+        ? new Date(timelineData.tasks[0].start_time) 
+        : now
+      
+      // Calculate the time offset to adjust tasks to today
+      const originalDate = new Date(firstTaskDate)
+      originalDate.setHours(0, 0, 0, 0)
+      const todayDate = new Date(now)
+      todayDate.setHours(0, 0, 0, 0)
+      const dayOffset = todayDate.getTime() - originalDate.getTime()
+      
       for (const timelineTask of timelineData.tasks) {
+        // Adjust the task times to today
+        const originalStart = new Date(timelineTask.start_time)
+        const originalEnd = new Date(timelineTask.end_time)
+        
+        const adjustedStart = new Date(originalStart.getTime() + dayOffset)
+        const adjustedEnd = new Date(originalEnd.getTime() + dayOffset)
+        
         await internalDB.addTaskWithDuration(
           timelineTask.name,
-          timelineTask.start_time,
-          timelineTask.end_time
+          adjustedStart.toISOString(),
+          adjustedEnd.toISOString()
         )
         importedCount++
       }
@@ -815,8 +893,8 @@ export default function DevScreen() {
             onPress={handleImportLocalTimeline}
             disabled={loading}
           >
-            <FontAwesome name="download" size={16} color="#666" />
-            <Text style={styles.secondaryButtonText}>
+            <FontAwesome name="download" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Importing...' : 'Import Sample Timeline'}
             </Text>
           </TouchableOpacity>
@@ -833,8 +911,8 @@ export default function DevScreen() {
             onPress={handleListTimelines}
             disabled={loading}
           >
-            <FontAwesome name="list" size={16} color="#666" />
-            <Text style={styles.secondaryButtonText}>
+            <FontAwesome name="list" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Loading...' : 'View Server Timelines'}
             </Text>
           </TouchableOpacity>
@@ -844,8 +922,8 @@ export default function DevScreen() {
             onPress={handleImportTimeline}
             disabled={loading}
           >
-            <FontAwesome name="cloud-download" size={16} color="#666" />
-            <Text style={styles.secondaryButtonText}>
+            <FontAwesome name="cloud-download" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Importing...' : 'Import Server Timeline'}
             </Text>
           </TouchableOpacity>
@@ -855,8 +933,8 @@ export default function DevScreen() {
             onPress={handleListModels}
             disabled={loading}
           >
-            <FontAwesome name="cube" size={16} color="#666" />
-            <Text style={styles.secondaryButtonText}>
+            <FontAwesome name="cube" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Loading...' : 'View Available Models'}
             </Text>
           </TouchableOpacity>
@@ -873,8 +951,8 @@ export default function DevScreen() {
             onPress={handleClearTasks}
             disabled={loading}
           >
-            <FontAwesome name="trash" size={16} color="#666" />
-            <Text style={styles.secondaryButtonText}>
+            <FontAwesome name="trash" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Clearing...' : 'Clear All Local Tasks'}
             </Text>
           </TouchableOpacity>
@@ -884,8 +962,8 @@ export default function DevScreen() {
             onPress={handleResetStaleTasks}
             disabled={loading}
           >
-            <FontAwesome name="refresh" size={16} color="#666" />
-            <Text style={styles.secondaryButtonText}>
+            <FontAwesome name="refresh" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Resetting...' : 'Reset Stale Tasks'}
             </Text>
           </TouchableOpacity>
@@ -895,8 +973,8 @@ export default function DevScreen() {
             onPress={handleTestDatabaseAccess}
             disabled={loading}
           >
-            <FontAwesome name="database" size={16} color="#666" />
-            <Text style={styles.secondaryButtonText}>
+            <FontAwesome name="database" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Testing...' : 'Test Database Connection'}
             </Text>
           </TouchableOpacity>
@@ -944,8 +1022,8 @@ export default function DevScreen() {
 
         {/* Auto Timeline Import Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Auto Timeline Import</Text>
-          <Text style={styles.sectionDescription}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Auto Timeline Import</Text>
+          <Text style={[styles.sectionDescription, { color: colors.textSecondary }]}>
             Automatically import timeline data every 5 minutes
           </Text>
           
@@ -979,7 +1057,7 @@ export default function DevScreen() {
               size={16} 
               color="#666" 
             />
-            <Text style={styles.secondaryButtonText}>
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {autoImportEnabled ? 'Disable Auto-Import' : 'Enable Auto-Import'}
             </Text>
           </TouchableOpacity>
@@ -1062,8 +1140,8 @@ export default function DevScreen() {
             style={[styles.button, styles.secondaryButton]}
             onPress={checkNotificationPermissions}
           >
-            <FontAwesome name="refresh" size={16} color="#666" />
-            <Text style={styles.secondaryButtonText}>Refresh Status</Text>
+            <FontAwesome name="refresh" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>Refresh Status</Text>
           </TouchableOpacity>
 
           {scheduledNotifications.length > 0 && (
@@ -1099,8 +1177,8 @@ export default function DevScreen() {
             onPress={handleClearActions}
             disabled={loading}
           >
-            <FontAwesome name="trash" size={16} color="#666" />
-            <Text style={styles.secondaryButtonText}>
+            <FontAwesome name="trash" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Clearing...' : 'Clear All Actions'}
             </Text>
           </TouchableOpacity>
@@ -1108,7 +1186,7 @@ export default function DevScreen() {
           <View style={styles.actionsContainer}>
             {actions.length > 0 ? (
               actions.slice(0, 10).map((action) => (
-                <View key={action.id} style={styles.actionCard}>
+                <View key={action.id} style={[styles.actionCard, { backgroundColor: colors.cardBackground, borderColor: colors.borderColor }]}>
                   <View style={styles.actionHeader}>
                     <Text style={styles.actionType}>
                       {action.action_type.replace('_', ' ').toUpperCase()}
@@ -1154,11 +1232,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 8,
-    color: '#333',
   },
   sectionDescription: {
     fontSize: 14,
-    color: '#666',
     marginBottom: 20,
     lineHeight: 20,
   },
@@ -1177,7 +1253,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   secondaryButton: {
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: '#ddd',
   },
@@ -1187,12 +1263,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   secondaryButtonText: {
-    color: '#666',
     fontSize: 16,
     fontWeight: '600',
   },
   infoCard: {
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -1203,11 +1278,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
-    color: '#333',
   },
   infoText: {
     fontSize: 14,
-    color: '#666',
     marginBottom: 4,
     lineHeight: 20,
   },
@@ -1218,7 +1291,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   actionCard: {
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
@@ -1239,29 +1312,24 @@ const styles = StyleSheet.create({
   },
   actionTime: {
     fontSize: 11,
-    color: '#999',
   },
   actionTaskName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
     marginBottom: 2,
   },
   actionDetails: {
     fontSize: 12,
-    color: '#666',
     fontStyle: 'italic',
   },
   noActionsText: {
     fontSize: 14,
-    color: '#999',
     textAlign: 'center',
     fontStyle: 'italic',
     padding: 20,
   },
   moreActionsText: {
     fontSize: 12,
-    color: '#666',
     textAlign: 'center',
     marginTop: 8,
     fontStyle: 'italic',
@@ -1321,10 +1389,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 2,
-    color: '#333',
   },
   notificationTime: {
     fontSize: 12,
-    color: '#666',
   },
 })

@@ -17,12 +17,16 @@ import { Text } from '@/components/Themed'
 import { Task } from '@/lib/offline/database'
 import Colors from '@/constants/Colors'
 import { FontAwesome } from '@expo/vector-icons'
+import ThemedIcon from '@/components/ThemedIcon'
+import { useTheme } from '@/contexts/ThemeContext'
 import { ExpoNotificationService } from '@/lib/notifications/expo-notifications'
 import * as Notifications from 'expo-notifications'
 import * as Speech from 'expo-speech'
 import { internalDB, InternalTask } from '@/lib/internal-db'
 import { supabase } from '@/lib/supabase'
 import { useFocusEffect } from 'expo-router'
+import { GlassMorphism } from '@/components/GlassMorphism'
+import { ThemedGradient } from '@/components/ThemedGradient'
 
 // Configure notification handler for Expo
 Notifications.setNotificationHandler({
@@ -53,13 +57,14 @@ const convertInternalTaskToTask = (internalTask: InternalTask): Task => ({
   start_time: internalTask.start_time,
   end_time: internalTask.end_time,
   completed_at: internalTask.completed_at,
-  priority: 'medium',
+  priority: internalTask.priority,
   sync_status: 'synced',
   created_at: internalTask.created_at,
   updated_at: internalTask.updated_at,
 })
 
 export default function ScheduleScreen() {
+  const { actualTheme, colors } = useTheme()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [internalTasks, setInternalTasks] = useState<Task[]>([])
   const [alertedTasks, setAlertedTasks] = useState<Set<string>>(new Set())
@@ -310,13 +315,15 @@ export default function ScheduleScreen() {
           id: taskId,
           name: timelineTask.name || timelineTask.title || 'Unnamed Task',
           status: 'pending' as const,
+          priority: timelineTask.priority || 'medium' as const,
           start_time: timelineTask.start_time,
           end_time: timelineTask.end_time,
+          duration: timelineTask.duration || InternalDB.calculateDuration(timelineTask.start_time, timelineTask.end_time),
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }
         await internalDB.saveTask(newTask)
-        console.log(`➕ Added new task: ${newTask.name}`)
+        console.log(`➕ Added new task: ${newTask.name} with start time: ${new Date(newTask.start_time).toLocaleString()}`)
       }
     }
     
@@ -1147,11 +1154,17 @@ export default function ScheduleScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <ThemedGradient style={styles.container}>
       {/* Processing Indicator */}
       {showProcessingIndicator && (
         <View style={styles.processingBanner}>
-          <FontAwesome name="cog" size={16} color="#fff" style={styles.processingIcon} />
+          <ThemedIcon 
+            name="cog" 
+            size={16} 
+            color="#fff" 
+            glassIntensity="light"
+            containerStyle={{ marginRight: 8, padding: 4 }}
+          />
           <Text style={styles.processingBannerText}>Processing your task request...</Text>
         </View>
       )}
@@ -1173,44 +1186,51 @@ export default function ScheduleScreen() {
         {/* Ready to Start Section */}
         {!runningTask && sortedTasks.some(shouldTaskStartNow) && (
           <View style={styles.readySection}>
-            <Text style={styles.sectionTitle}>Ready to Start</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Ready to Start</Text>
             {sortedTasks.filter(shouldTaskStartNow).map((task) => (
-              <View key={task.local_id} style={styles.readyCard}>
+              <GlassMorphism key={task.local_id} style={[styles.readyCard, { backgroundColor: '#4CAF50' }]} intensity="strong">
                 <View style={styles.taskInfo}>
-                  <Text style={styles.readyTaskName}>{task.name}</Text>
-                  <Text style={styles.readyTaskTime}>
+                  <Text style={[styles.readyTaskName, { color: '#fff' }]}>{task.name}</Text>
+                  <Text style={[styles.readyTaskTime, { color: '#fff' }]}>
                     {formatTaskTime(task.start_time!)} - {formatTaskTime(task.end_time!)}
                   </Text>
-                  <Text style={styles.readyIndicator}>Ready to start now!</Text>
+                  <Text style={[styles.readyIndicator, { color: '#fff' }]}>Ready to start now!</Text>
                 </View>
                 <TouchableOpacity
                   style={styles.readyStartButton}
                   onPress={() => handleStartTask(task)}
                 >
-                  <FontAwesome name="play" size={20} color="#fff" />
+                  <ThemedIcon 
+                    name="play" 
+                    size={20} 
+                    color="#fff" 
+                    glassIntensity="medium"
+                    containerStyle={{ padding: 6 }}
+                  />
                   <Text style={styles.readyStartButtonText}>Start</Text>
                 </TouchableOpacity>
-              </View>
+              </GlassMorphism>
             ))}
           </View>
         )}
 
         {/* Current Status Section */}
         <View style={styles.currentSection}>
-          <Text style={styles.sectionTitle}>Now</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Now</Text>
           {currentTask ? (
             <TouchableOpacity
               onLongPress={() => handleLongPress(currentTask)}
               delayLongPress={500}
               activeOpacity={0.8}
             >
-              <Animated.View style={[
+              <GlassMorphism style={[
                 styles.currentCard, 
-                currentTaskRemaining.readyToComplete && !currentTaskRemaining.isOvertime && styles.readyToCompleteCard,
-                currentTaskRemaining.isOvertime && styles.overtimeCard,
-                currentTask?.status === 'completed' && styles.completedCard,
-                { opacity: fadeAnim }
-              ]}>
+                currentTask?.status === 'in_progress' && { backgroundColor: '#FFA726' }, // Default yellow for in-progress
+                currentTaskRemaining.readyToComplete && !currentTaskRemaining.isOvertime && { ...styles.readyToCompleteCard, backgroundColor: '#FFA726' },
+                currentTaskRemaining.isOvertime && { ...styles.overtimeCard, backgroundColor: '#ff6b35' },
+                currentTask?.status === 'completed' && { ...styles.completedCard, backgroundColor: '#4CAF50' },
+              ]} intensity="extra-strong">
+              <Animated.View style={[{ opacity: fadeAnim }]}>
               <Text style={styles.currentTaskName}>{currentTask.name}</Text>
               <Text style={styles.currentTaskTime}>
                 {formatTaskTime(currentTask.start_time!)} - {formatTaskTime(currentTask.end_time!)}
@@ -1218,7 +1238,13 @@ export default function ScheduleScreen() {
               {currentTask.status === 'completed' ? (
                 <View style={styles.timerContainer}>
                   <Text style={styles.timerLabel}>Task Completed!</Text>
-                  <FontAwesome name="check-circle" size={48} color="#fff" />
+                  <ThemedIcon 
+                    name="check-circle" 
+                    size={48} 
+                    color="#fff" 
+                    glassIntensity="strong"
+                    containerStyle={{ marginVertical: 10, padding: 12 }}
+                  />
                   <Text style={styles.completedTime}>
                     Completed at {currentTask.completed_at ? new Date(currentTask.completed_at).toLocaleTimeString() : 'now'}
                   </Text>
@@ -1260,28 +1286,29 @@ export default function ScheduleScreen() {
                 </>
               )}
               </Animated.View>
+              </GlassMorphism>
             </TouchableOpacity>
           ) : (
-            <View style={styles.freeTimeCard}>
-              <FontAwesome name="coffee" size={32} color="#999" style={styles.freeTimeIcon} />
-              <Text style={styles.freeTimeTaskName}>Free Time</Text>
+            <GlassMorphism style={styles.freeTimeCard} intensity="light">
+              <FontAwesome name="coffee" size={32} color={colors.textSecondary} style={styles.freeTimeIcon} />
+              <Text style={[styles.freeTimeTaskName, { color: colors.textSecondary }]}>Free Time</Text>
               {nextTask && (
                 <>
-                  <Text style={styles.freeTimeSubtext}>Next task in</Text>
-                  <Text style={styles.freeTimeTimer}>{formatTime(timeUntilNext)}</Text>
+                  <Text style={[styles.freeTimeSubtext, { color: colors.textTertiary }]}>Next task in</Text>
+                  <Text style={[styles.freeTimeTimer, { color: colors.textSecondary }]}>{formatTime(timeUntilNext)}</Text>
                 </>
               )}
-              {!nextTask && <Text style={styles.freeTimeSubtext}>No upcoming tasks</Text>}
-            </View>
+              {!nextTask && <Text style={[styles.freeTimeSubtext, { color: colors.textTertiary }]}>No upcoming tasks</Text>}
+            </GlassMorphism>
           )}
         </View>
 
         {/* Paused Tasks Section */}
         {pausedTasks.length > 0 && (
           <View style={styles.pausedSection}>
-            <Text style={styles.sectionTitle}>Paused Tasks</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Paused Tasks</Text>
             {pausedTasks.map((task) => (
-              <View key={task.local_id} style={styles.pausedCard}>
+              <GlassMorphism key={task.local_id} style={styles.pausedCard} intensity="light" borderRadius={12}>
                 <TouchableOpacity
                   onLongPress={() => handleLongPress(task)}
                   delayLongPress={500}
@@ -1289,8 +1316,8 @@ export default function ScheduleScreen() {
                   style={styles.pausedCardContent}
                 >
                   <View style={styles.pausedTaskInfo}>
-                    <Text style={styles.pausedTaskName}>{task.name}</Text>
-                    <Text style={styles.pausedTaskTime}>
+                    <Text style={[styles.pausedTaskName, { color: colors.text }]}>{task.name}</Text>
+                    <Text style={[styles.pausedTaskTime, { color: colors.textSecondary }]}>
                       {formatTaskTime(task.start_time!)} - {formatTaskTime(task.end_time!)}
                     </Text>
                     <Text style={styles.pausedTaskStatus}>
@@ -1305,7 +1332,7 @@ export default function ScheduleScreen() {
                     <Text style={styles.resumeButtonText}>Resume</Text>
                   </TouchableOpacity>
                 </TouchableOpacity>
-              </View>
+              </GlassMorphism>
             ))}
           </View>
         )}
@@ -1313,18 +1340,18 @@ export default function ScheduleScreen() {
         {/* Next Task Section */}
         {nextTask && !shouldTaskStartNow(nextTask) && (
           <View style={styles.nextSection}>
-            <Text style={styles.sectionTitle}>Next Up</Text>
-            <View style={styles.nextCard}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Next Up</Text>
+            <GlassMorphism style={styles.nextCard} intensity="medium">
               <View style={styles.taskInfo}>
-                <Text style={styles.nextTaskName}>{nextTask.name}</Text>
-                <Text style={styles.nextTaskTime}>
+                <Text style={[styles.nextTaskName, { color: colors.text }]}>{nextTask.name}</Text>
+                <Text style={[styles.nextTaskTime, { color: colors.textSecondary }]}>
                   {formatTaskTime(nextTask.start_time!)} - {formatTaskTime(nextTask.end_time!)}
                 </Text>
-                <Text style={styles.aboutToStartText}>
+                <Text style={[styles.aboutToStartText, { color: colors.textSuccess }]}>
                   Starting in {formatTimeUntil(new Date(nextTask.start_time!).getTime() - currentTime.getTime())}
                 </Text>
               </View>
-            </View>
+            </GlassMorphism>
           </View>
         )}
 
@@ -1332,8 +1359,8 @@ export default function ScheduleScreen() {
         {sortedTasks.length > 0 && (
           <View style={styles.upcomingSection}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Upcoming Tasks</Text>
-              <Text style={styles.sectionSubtitle}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Upcoming Tasks</Text>
+              <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
                 {upcomingTasks.filter(task => !shouldTaskStartNow(task) && task.local_id !== nextTask?.local_id).length} remaining
               </Text>
             </View>
@@ -1346,13 +1373,14 @@ export default function ScheduleScreen() {
                   const timeUntilTask = new Date(task.start_time!).getTime() - currentTime.getTime()
                   
                   return (
-                    <TouchableOpacity
+                    <GlassMorphism
                       key={task.local_id}
                       style={[styles.upcomingCard, index === 0 && styles.upcomingCardFirst]}
+                      intensity={index === 0 ? "medium" : "light"}
                     >
                       <View style={styles.taskInfo}>
-                        <Text style={styles.upcomingTaskName}>{task.name}</Text>
-                        <Text style={styles.upcomingTaskTime}>
+                        <Text style={[styles.upcomingTaskName, { color: colors.text }]}>{task.name}</Text>
+                        <Text style={[styles.upcomingTaskTime, { color: colors.textSecondary }]}>
                           {formatTaskTime(task.start_time!)} - {formatTaskTime(task.end_time!)}
                         </Text>
                         <Text style={styles.upcomingTimeUntil}>
@@ -1366,22 +1394,22 @@ export default function ScheduleScreen() {
                           color={index === 0 ? Colors.light.tint : '#999'} 
                         />
                       </View>
-                    </TouchableOpacity>
+                    </GlassMorphism>
                   )
                 })
             ) : (
-              <View style={styles.noUpcomingCard}>
+              <GlassMorphism style={styles.noUpcomingCard} intensity="light">
                 <FontAwesome name="check-circle" size={24} color="#4CAF50" style={styles.noUpcomingIcon} />
                 <View style={styles.noUpcomingTextContainer}>
-                  <Text style={styles.noUpcomingText}>All caught up!</Text>
-                  <Text style={styles.noUpcomingSubtext}>
+                  <Text style={[styles.noUpcomingText, { color: colors.textSuccess }]}>All caught up!</Text>
+                  <Text style={[styles.noUpcomingSubtext, { color: colors.textSecondary }]}>
                     {currentTask ? 
                       'No more tasks after your current one' : 
                       'No upcoming tasks scheduled'
                     }
                   </Text>
                 </View>
-              </View>
+              </GlassMorphism>
             )}
           </View>
         )}
@@ -1415,15 +1443,15 @@ export default function ScheduleScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           >
             <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-              <View style={styles.modalContentWrapper}>
-                <View style={styles.modalHeader}>
+              <View style={[styles.modalContentWrapper, { backgroundColor: colors.background }]}>
+                <View style={[styles.modalHeader, { backgroundColor: colors.background, borderBottomColor: colors.borderColor }]}>
             <TouchableOpacity 
               onPress={() => setShowTaskInput(false)}
               style={styles.cancelButton}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Add Task Prompt</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Add Task Prompt</Text>
             <TouchableOpacity 
               onPress={handleCreateTaskFromInput}
               style={[styles.createButton, (!taskInputText.trim() || isProcessing) && styles.disabledButton]}
@@ -1435,19 +1463,19 @@ export default function ScheduleScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.modalContent}>
-            <Text style={styles.inputLabel}>Describe your task request:</Text>
-            <Text style={styles.inputHint}>
+          <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>Describe your task request:</Text>
+            <Text style={[styles.inputHint, { color: colors.textSecondary }]}>
               Tell us what task you'd like to schedule and when
             </Text>
             
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, { borderColor: colors.borderColor, backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : '#f8f9fa' }]}>
               <TextInput
-                style={styles.textInput}
+                style={[styles.textInput, { color: colors.text }]}
                 value={taskInputText}
                 onChangeText={setTaskInputText}
                 placeholder="What would you like to work on?"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.textTertiary}
                 multiline
                 textAlignVertical="top"
                 autoFocus
@@ -1461,7 +1489,7 @@ export default function ScheduleScreen() {
                 <FontAwesome 
                   name={isListening ? "microphone" : "microphone-slash"} 
                   size={20} 
-                  color={isListening ? "#fff" : "#666"} 
+                  color={isListening ? "#fff" : colors.textSecondary} 
                 />
               </TouchableOpacity>
             </View>
@@ -1481,24 +1509,24 @@ export default function ScheduleScreen() {
             )}
 
             <View style={styles.examplesContainer}>
-              <Text style={styles.examplesTitle}>Example phrases:</Text>
+              <Text style={[styles.examplesTitle, { color: colors.text }]}>Example phrases:</Text>
               <TouchableOpacity 
-                style={styles.exampleChip}
+                style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0', borderColor: actualTheme === 'dark' ? '#333' : '#e0e0e0' }]}
                 onPress={() => setTaskInputText('Read emails for 15 minutes')}
               >
-                <Text style={styles.exampleText}>"Read emails for 15 minutes"</Text>
+                <Text style={[styles.exampleText, { color: colors.textSecondary }]}>"Read emails for 15 minutes"</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.exampleChip}
+                style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0', borderColor: actualTheme === 'dark' ? '#333' : '#e0e0e0' }]}
                 onPress={() => setTaskInputText('Meeting with team in 10 minutes for 1 hour')}
               >
-                <Text style={styles.exampleText}>"Meeting with team in 10 minutes for 1 hour"</Text>
+                <Text style={[styles.exampleText, { color: colors.textSecondary }]}>"Meeting with team in 10 minutes for 1 hour"</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.exampleChip}
+                style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0', borderColor: actualTheme === 'dark' ? '#333' : '#e0e0e0' }]}
                 onPress={() => setTaskInputText('Exercise for 30 minutes starting now')}
               >
-                <Text style={styles.exampleText}>"Exercise for 30 minutes starting now"</Text>
+                <Text style={[styles.exampleText, { color: colors.textSecondary }]}>"Exercise for 30 minutes starting now"</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1520,12 +1548,12 @@ export default function ScheduleScreen() {
           activeOpacity={1}
           onPress={closeContextMenu}
         >
-          <View style={styles.contextMenuContainer}>
-            <View style={styles.contextMenuHeader}>
-              <Text style={styles.contextMenuTitle}>
+          <GlassMorphism style={styles.contextMenuContainer} intensity={actualTheme === 'dark' ? 'strong' : 'medium'} borderRadius={12}>
+            <View style={[styles.contextMenuHeader, { borderBottomColor: actualTheme === 'dark' ? '#333' : '#f0f0f0' }]}>
+              <Text style={[styles.contextMenuTitle, { color: colors.text }]}>
                 {contextMenuTask?.name}
               </Text>
-              <Text style={styles.contextMenuSubtitle}>Choose an action</Text>
+              <Text style={[styles.contextMenuSubtitle, { color: colors.textSecondary }]}>Choose an action</Text>
             </View>
             
             {contextMenuTask?.status === 'in_progress' && (
@@ -1567,31 +1595,41 @@ export default function ScheduleScreen() {
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={[styles.contextMenuItem, styles.dismissMenuItem]}
+              style={[styles.contextMenuItem, styles.dismissMenuItem, { backgroundColor: actualTheme === 'dark' ? '#2a2a2a' : '#f8f9fa' }]}
               onPress={closeContextMenu}
             >
-              <Text style={styles.dismissMenuText}>Dismiss</Text>
+              <Text style={[styles.dismissMenuText, { color: colors.textSecondary }]}>Dismiss</Text>
             </TouchableOpacity>
-          </View>
+          </GlassMorphism>
         </TouchableOpacity>
       </Modal>
 
       {/* Floating Action Button */}
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, {
+          backgroundColor: actualTheme === 'dark' 
+            ? 'rgba(177, 156, 217, 0.9)' 
+            : 'rgba(74, 144, 226, 0.9)',
+          shadowColor: actualTheme === 'dark' ? '#B19CD9' : '#4A90E2',
+        }]}
         onPress={handleQuickAddTask}
         activeOpacity={0.8}
       >
-        <FontAwesome name="plus" size={24} color="#fff" />
+        <ThemedIcon 
+          name="plus" 
+          size={24} 
+          color="#fff" 
+          glassIntensity="strong"
+          containerStyle={{ padding: 0, backgroundColor: 'transparent', borderWidth: 0 }}
+        />
       </TouchableOpacity>
-    </View>
+    </ThemedGradient>
   )
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   processingBanner: {
     backgroundColor: Colors.light.tint,
@@ -1626,20 +1664,12 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   readyCard: {
-    backgroundColor: '#e8f5e8',
     borderRadius: 16,
     padding: 20,
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
   },
   readyTaskName: {
     fontSize: 18,
@@ -1683,11 +1713,9 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#666',
     marginBottom: 12,
   },
   currentCard: {
-    backgroundColor: Colors.light.tint,
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
@@ -1781,17 +1809,14 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   freeTimeCard: {
-    backgroundColor: '#f8f9fa',
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#e9ecef',
-    borderStyle: 'dashed',
   },
   freeTimeIcon: {
     marginBottom: 8,
     opacity: 0.7,
+    alignSelf: 'center',
   },
   freeTimeTaskName: {
     fontSize: 24,
@@ -1823,17 +1848,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   nextCard: {
-    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   aboutToStartCard: {
     backgroundColor: '#f0f9f0',
@@ -1917,20 +1936,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   upcomingCard: {
-    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
   },
   upcomingCardFirst: {
     borderColor: Colors.light.tint,
@@ -1962,13 +1973,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   noUpcomingCard: {
-    backgroundColor: '#f8f9fa',
     borderRadius: 12,
     padding: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e9ecef',
   },
   noUpcomingIcon: {
     marginRight: 12,
@@ -2038,7 +2046,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderBottomWidth: 1,
@@ -2052,10 +2060,9 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 32,
@@ -2073,7 +2080,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   cancelButtonText: {
-    color: '#666',
     fontSize: 16,
     fontWeight: '500',
   },
@@ -2097,13 +2103,11 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
     marginBottom: 8,
     marginTop: 20,
   },
   inputHint: {
     fontSize: 14,
-    color: '#666',
     marginBottom: 12,
   },
   inputContainer: {
@@ -2122,7 +2126,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     maxHeight: 100,
     paddingVertical: 8,
-    color: '#333',
   },
   voiceButton: {
     marginLeft: 8,
@@ -2187,7 +2190,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   contextMenuContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderRadius: 16,
     margin: 20,
     padding: 0,
@@ -2206,12 +2209,10 @@ const styles = StyleSheet.create({
   contextMenuTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
     marginBottom: 4,
   },
   contextMenuSubtitle: {
     fontSize: 14,
-    color: '#666',
   },
   contextMenuItem: {
     flexDirection: 'row',
@@ -2255,7 +2256,6 @@ const styles = StyleSheet.create({
   },
   dismissMenuText: {
     fontSize: 16,
-    color: '#666',
     textAlign: 'center',
     flex: 1,
   },
@@ -2265,7 +2265,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   pausedCard: {
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     marginBottom: 12,
     shadowColor: '#000',
