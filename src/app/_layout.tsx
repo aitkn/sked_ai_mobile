@@ -10,6 +10,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { TaskProvider } from '../contexts/TaskContext';
+import { ThemeProvider as CustomThemeProvider, useTheme } from '../contexts/ThemeContext';
 
 // ErrorBoundary is exported separately
 import { ErrorBoundary } from 'expo-router';
@@ -44,11 +45,15 @@ export default function RootLayout() {
     return null;
   }
 
-  return <RootLayoutNav />;
+  return (
+    <CustomThemeProvider>
+      <RootLayoutNav />
+    </CustomThemeProvider>
+  );
 }
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  const { actualTheme } = useTheme();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const segments = useSegments();
@@ -88,7 +93,7 @@ function RootLayoutNav() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={actualTheme === 'dark' ? DarkTheme : DefaultTheme}>
       {session ? (
         <TaskProvider>
           <Stack screenOptions={{ headerShown: false }}>

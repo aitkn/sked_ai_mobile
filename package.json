@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@supabase/supabase-js": "^2.50.0",
+    "@twodoorsdev/react-native-debugger-mcp": "^1.0.0",
+    "cali-mcp-server": "^0.3.1"
+  }
+}
