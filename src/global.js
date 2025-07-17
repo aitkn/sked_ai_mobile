@@ -1,12 +1,8 @@
 // Polyfills for React Native
 import 'react-native-get-random-values';
-import { polyfillWebCrypto } from 'expo-standard-web-crypto';
-
-polyfillWebCrypto();
 
 // Global polyfills
-global.Buffer = require('buffer').Buffer;
-global.process = require('process');
+global.process = global.process || {};
 global.process.env = {};
 global.process.version = 'v16.0.0';
 
