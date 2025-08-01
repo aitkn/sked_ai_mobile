@@ -56,13 +56,13 @@ export default function CalendarScreen() {
   const loadTasks = async () => {
     try {
       const allTasks = await internalDB.getAllTasks();
-      console.log('📅 Calendar: Loaded tasks:', allTasks.length);
-      console.log('📅 Calendar: Task details:', allTasks.map(t => ({
-        id: t.id,
-        name: t.name,
-        start: new Date(t.start_time).toLocaleString(),
-        status: t.status
-      })));
+      // console.log('📅 Calendar: Loaded tasks:', allTasks.length);
+      // console.log('📅 Calendar: Task details:', allTasks.map(t => ({
+      //   id: t.id,
+      //   name: t.name,
+      //   start: new Date(t.start_time).toLocaleString(),
+      //   status: t.status
+      // })));
       setTasks(allTasks);
     } catch (error) {
       console.error('Error loading tasks for calendar:', error);
@@ -88,22 +88,22 @@ export default function CalendarScreen() {
       const taskDateStr = taskDate.toDateString();
       const matches = taskDateStr === dateStr;
       
-      // Debug logging for today's tasks
-      if (isToday && tasks.length > 0) {
-        console.log('📅 Calendar: Task date check:', {
-          taskName: task.name,
-          taskDate: taskDateStr,
-          targetDate: dateStr,
-          matches
-        });
-      }
+      // Debug logging for today's tasks - DISABLED
+      // if (isToday && tasks.length > 0) {
+      //   console.log('📅 Calendar: Task date check:', {
+      //     taskName: task.name,
+      //     taskDate: taskDateStr,
+      //     targetDate: dateStr,
+      //     matches
+      //   });
+      // }
       
       return matches;
     });
     
-    if (isToday && filteredTasks.length === 0 && tasks.length > 0) {
-      console.log('📅 Calendar: No tasks found for today, but tasks exist:', tasks.length);
-    }
+    // if (isToday && filteredTasks.length === 0 && tasks.length > 0) {
+    //   console.log('📅 Calendar: No tasks found for today, but tasks exist:', tasks.length);
+    // }
     
     return filteredTasks;
   };
@@ -212,6 +212,88 @@ export default function CalendarScreen() {
     setIsProcessing(true);
     
     try {
+      // HARDCODED FUNCTIONALITY - Handle specific prompts locally
+      const promptText = taskInputText.trim().toLowerCase()
+      console.log('🎯 Calendar: Processing prompt:', promptText)
+      
+      if (promptText.includes('delete tasks for saturday')) {
+        console.log('🎯 Calendar: Hardcoded response - Deleting Saturday tasks...')
+        
+        // Get current date to find next Saturday
+        const now = new Date()
+        const currentDay = now.getDay() // 0 = Sunday, 6 = Saturday
+        const daysUntilSaturday = currentDay === 6 ? 0 : (6 - currentDay + 7) % 7
+        
+        const nextSaturday = new Date(now)
+        nextSaturday.setDate(now.getDate() + daysUntilSaturday)
+        nextSaturday.setHours(0, 0, 0, 0)
+        
+        const saturdayEnd = new Date(nextSaturday)
+        saturdayEnd.setHours(23, 59, 59, 999)
+        
+        console.log(`🎯 Calendar: Looking for tasks on Saturday: ${nextSaturday.toDateString()}`)
+        
+        // Get all tasks and filter for Saturday
+        const allTasks = await internalDB.getAllTasks()
+        const saturdayTasks = allTasks.filter(task => {
+          const taskStart = new Date(task.start_time)
+          return taskStart >= nextSaturday && taskStart <= saturdayEnd
+        })
+        
+        console.log(`🎯 Calendar: Found ${saturdayTasks.length} Saturday tasks to delete`)
+        
+        if (saturdayTasks.length === 0) {
+          Alert.alert(
+            'No Saturday Tasks',
+            `No tasks found for Saturday (${nextSaturday.toDateString()}). Use the Dev tab to create some Saturday tasks first.`,
+            [{ text: 'OK' }]
+          )
+          setTaskInputText('')
+          setShowTaskInput(false)
+          setIsProcessing(false)
+          return
+        }
+        
+        // Delete each Saturday task
+        let deletedCount = 0
+        for (const task of saturdayTasks) {
+          console.log(`🎯 Calendar: Deleting task: ${task.name}`)
+          const success = await internalDB.deleteTask(task.id)
+          if (success) {
+            deletedCount++
+          }
+        }
+        
+        // Reload tasks to update UI
+        loadTasks()
+        
+        // Show success message
+        Alert.alert(
+          'Tasks Deleted',
+          `Successfully deleted ${deletedCount} task${deletedCount !== 1 ? 's' : ''} scheduled for Saturday (${nextSaturday.toDateString()}).`,
+          [{ text: 'OK' }]
+        )
+        
+        // Clear input and hide modal
+        setTaskInputText('')
+        setShowTaskInput(false)
+        setIsProcessing(false)
+        return
+      }
+      
+      // DISABLE ALL OTHER SUPABASE FUNCTIONALITY - MOCK MODE ONLY
+      Alert.alert(
+        'AI Schedule Request Received', 
+        'Your schedule request has been received. In the full version, AI will process this and create an optimized timeline for you.',
+        [{ text: 'OK' }]
+      )
+      setTaskInputText('')
+      setShowTaskInput(false)
+      setIsProcessing(false)
+      return
+      
+      // ORIGINAL SUPABASE CODE - DISABLED
+      /* 
       // Format the date for the task
       const dateStr = selectedDate.toLocaleDateString('en-US', {
         month: 'long',
@@ -275,6 +357,7 @@ export default function CalendarScreen() {
       setTimeout(() => {
         loadTasks();
       }, 3000);
+      */
       
     } catch (error: any) {
       console.error('❌ Error saving prompt:', error);
@@ -679,30 +762,27 @@ export default function CalendarScreen() {
                   >
                     <Text style={[styles.cancelButtonText, { color: actualTheme === 'dark' ? '#fff' : '#666' }]}>Cancel</Text>
                   </TouchableOpacity>
-                  <Text style={[styles.modalTitle, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>Add Task for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
+                  <Text style={[styles.modalTitle, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>Update Schedule</Text>
                   <TouchableOpacity 
                     onPress={handleCreateTaskFromInput}
                     style={[styles.createButton, (!taskInputText.trim() || isProcessing) && styles.disabledButton]}
                     disabled={!taskInputText.trim() || isProcessing}
                   >
                     <Text style={[styles.createButtonText, (!taskInputText.trim() || isProcessing) && styles.disabledButtonText]}>
-                      {isProcessing ? 'Saving...' : 'Save'}
+                      {isProcessing ? 'Processing...' : 'Send to AI'}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
                 <View style={[styles.modalContent, { backgroundColor: 'transparent' }]}>
-                  <Text style={[styles.inputLabel, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>Describe your task:</Text>
-                  <Text style={[styles.inputHint, { color: actualTheme === 'dark' ? '#aaa' : '#666' }]}>
-                    Tell us what you'd like to schedule for {selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                  </Text>
+                  <Text style={[styles.inputLabel, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>Describe your schedule needs:</Text>
                   
                   <GlassMorphism style={[styles.inputContainer, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'transparent' }]} intensity={actualTheme === 'dark' ? 'strong' : 'light'} borderRadius={12}>
                     <TextInput
                       style={[styles.textInput, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}
                       value={taskInputText}
                       onChangeText={setTaskInputText}
-                      placeholder="What would you like to do?"
+                      placeholder="I need 2 hours for project review, 30 minutes for calls, and time to plan tomorrow's presentation..."
                       placeholderTextColor={actualTheme === 'dark' ? '#888' : '#999'}
                       multiline
                       textAlignVertical="top"

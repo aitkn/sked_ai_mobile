@@ -1087,6 +1087,9 @@ export default function ScheduleScreen() {
   }
 
   const handleCreateTaskFromInput = async () => {
+    Alert.alert('DEBUG', `Function called with: "${taskInputText}"`)
+    console.log('🎯 handleCreateTaskFromInput called with input:', taskInputText)
+    
     if (!taskInputText.trim()) {
       Alert.alert('Error', 'Please enter a task description')
       return
@@ -1097,6 +1100,88 @@ export default function ScheduleScreen() {
     try {
       console.log('🔍 Starting prompt submission process...')
       
+      // HARDCODED FUNCTIONALITY - Handle specific prompts locally
+      const promptText = taskInputText.trim().toLowerCase()
+      console.log('🎯 Processed prompt text:', promptText)
+      
+      if (promptText.includes('delete tasks for saturday')) {
+        console.log('🎯 Hardcoded response: Deleting Saturday tasks...')
+        
+        // Get current date to find next Saturday
+        const now = new Date()
+        const currentDay = now.getDay() // 0 = Sunday, 6 = Saturday
+        const daysUntilSaturday = currentDay === 6 ? 0 : (6 - currentDay + 7) % 7
+        
+        const nextSaturday = new Date(now)
+        nextSaturday.setDate(now.getDate() + daysUntilSaturday)
+        nextSaturday.setHours(0, 0, 0, 0)
+        
+        const saturdayEnd = new Date(nextSaturday)
+        saturdayEnd.setHours(23, 59, 59, 999)
+        
+        console.log(`🎯 Looking for tasks on Saturday: ${nextSaturday.toDateString()}`)
+        
+        // Get all tasks and filter for Saturday
+        const allTasks = await internalDB.getAllTasks()
+        const saturdayTasks = allTasks.filter(task => {
+          const taskStart = new Date(task.start_time)
+          return taskStart >= nextSaturday && taskStart <= saturdayEnd
+        })
+        
+        console.log(`🎯 Found ${saturdayTasks.length} Saturday tasks to delete`)
+        
+        if (saturdayTasks.length === 0) {
+          Alert.alert(
+            'No Saturday Tasks',
+            `No tasks found for Saturday (${nextSaturday.toDateString()}). Use the Dev tab to create some Saturday tasks first.`,
+            [{ text: 'OK' }]
+          )
+          setTaskInputText('')
+          setShowTaskInput(false)
+          setIsProcessing(false)
+          return
+        }
+        
+        // Delete each Saturday task
+        let deletedCount = 0
+        for (const task of saturdayTasks) {
+          console.log(`🎯 Deleting task: ${task.name}`)
+          const success = await internalDB.deleteTask(task.id)
+          if (success) {
+            deletedCount++
+          }
+        }
+        
+        // Reload tasks to update UI
+        loadInternalTasks()
+        
+        // Show success message
+        Alert.alert(
+          'Tasks Deleted',
+          `Successfully deleted ${deletedCount} task${deletedCount !== 1 ? 's' : ''} scheduled for Saturday (${nextSaturday.toDateString()}).`,
+          [{ text: 'OK' }]
+        )
+        
+        // Clear input and hide modal
+        setTaskInputText('')
+        setShowTaskInput(false)
+        setIsProcessing(false)
+        return
+      }
+      
+      // DISABLE ALL SUPABASE FUNCTIONALITY - MOCK MODE ONLY
+      Alert.alert(
+        'AI Schedule Request Received', 
+        'Your schedule request has been received. In the full version, AI will process this and create an optimized timeline for you.',
+        [{ text: 'OK' }]
+      )
+      setTaskInputText('')
+      setShowTaskInput(false)
+      setIsProcessing(false)
+      return
+      
+      // ORIGINAL SUPABASE CODE - DISABLED
+      /* 
       // Get current user
       const { data: { user }, error: authError } = await supabase.auth.getUser()
       console.log('🔍 Auth check - user:', user ? 'exists' : 'null', 'error:', authError)
@@ -1168,6 +1253,7 @@ export default function ScheduleScreen() {
       setTimeout(() => {
         setShowProcessingIndicator(false)
       }, 2000)
+      */
       
     } catch (error: any) {
       console.error('❌ Error saving prompt:', error)
@@ -1479,30 +1565,27 @@ export default function ScheduleScreen() {
             >
               <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Add Task Prompt</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Update Schedule</Text>
             <TouchableOpacity 
               onPress={handleCreateTaskFromInput}
               style={[styles.createButton, (!taskInputText.trim() || isProcessing) && styles.disabledButton]}
               disabled={!taskInputText.trim() || isProcessing}
             >
               <Text style={[styles.createButtonText, (!taskInputText.trim() || isProcessing) && styles.disabledButtonText]}>
-                {isProcessing ? 'Saving...' : 'Save Prompt'}
+                {isProcessing ? 'Processing...' : 'Send to AI'}
               </Text>
             </TouchableOpacity>
           </View>
 
           <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Describe your task request:</Text>
-            <Text style={[styles.inputHint, { color: colors.textSecondary }]}>
-              Tell us what task you'd like to schedule and when
-            </Text>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>Describe your schedule needs:</Text>
             
             <View style={[styles.inputContainer, { borderColor: colors.borderColor, backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : '#f8f9fa' }]}>
               <TextInput
                 style={[styles.textInput, { color: colors.text }]}
                 value={taskInputText}
                 onChangeText={setTaskInputText}
-                placeholder="What would you like to work on?"
+                placeholder="I need to prepare for a presentation tomorrow, do some exercise, and finish 3 client reports this week..."
                 placeholderTextColor={colors.textTertiary}
                 multiline
                 textAlignVertical="top"
@@ -1532,31 +1615,10 @@ export default function ScheduleScreen() {
             {isProcessing && (
               <View style={styles.processingIndicator}>
                 <FontAwesome name="cog" size={16} color={Colors.light.tint} />
-                <Text style={styles.processingText}>AI is processing your request...</Text>
+                <Text style={styles.processingText}>AI is creating your schedule...</Text>
               </View>
             )}
 
-            <View style={styles.examplesContainer}>
-              <Text style={[styles.examplesTitle, { color: colors.text }]}>Example phrases:</Text>
-              <TouchableOpacity 
-                style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0', borderColor: actualTheme === 'dark' ? '#333' : '#e0e0e0' }]}
-                onPress={() => setTaskInputText('Read emails for 15 minutes')}
-              >
-                <Text style={[styles.exampleText, { color: colors.textSecondary }]}>"Read emails for 15 minutes"</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0', borderColor: actualTheme === 'dark' ? '#333' : '#e0e0e0' }]}
-                onPress={() => setTaskInputText('Meeting with team in 10 minutes for 1 hour')}
-              >
-                <Text style={[styles.exampleText, { color: colors.textSecondary }]}>"Meeting with team in 10 minutes for 1 hour"</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0', borderColor: actualTheme === 'dark' ? '#333' : '#e0e0e0' }]}
-                onPress={() => setTaskInputText('Exercise for 30 minutes starting now')}
-              >
-                <Text style={[styles.exampleText, { color: colors.textSecondary }]}>"Exercise for 30 minutes starting now"</Text>
-              </TouchableOpacity>
-            </View>
           </View>
               </View>
             </TouchableOpacity>

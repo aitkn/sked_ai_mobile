@@ -756,6 +756,60 @@ export default function DevScreen() {
     }
   }
 
+  const handleCreateSaturdayTasks = async () => {
+    try {
+      setLoading(true)
+      console.log('📅 Creating mock Saturday tasks...')
+      
+      // Calculate next Saturday
+      const now = new Date()
+      const currentDay = now.getDay() // 0 = Sunday, 6 = Saturday
+      const daysUntilSaturday = currentDay === 6 ? 0 : (6 - currentDay + 7) % 7
+      
+      const nextSaturday = new Date(now)
+      nextSaturday.setDate(now.getDate() + daysUntilSaturday)
+      
+      // Create sample Saturday tasks
+      const saturdayTasks = [
+        { name: 'Morning workout', startHour: 8, duration: 60 },
+        { name: 'Grocery shopping', startHour: 10, duration: 90 },
+        { name: 'Lunch with family', startHour: 12, duration: 90 },
+        { name: 'House cleaning', startHour: 15, duration: 120 },
+        { name: 'Movie night', startHour: 19, duration: 150 }
+      ]
+      
+      let createdCount = 0
+      for (const taskTemplate of saturdayTasks) {
+        const startTime = new Date(nextSaturday)
+        startTime.setHours(taskTemplate.startHour, 0, 0, 0)
+        
+        const endTime = new Date(startTime.getTime() + taskTemplate.duration * 60 * 1000)
+        
+        await internalDB.addTaskWithDuration(
+          taskTemplate.name,
+          startTime.toISOString(),
+          endTime.toISOString()
+        )
+        createdCount++
+        console.log(`📅 Created Saturday task: ${taskTemplate.name}`)
+      }
+      
+      await loadTasks()
+      await loadActions()
+      
+      Alert.alert(
+        'Saturday Tasks Created!',
+        `Successfully created ${createdCount} mock tasks for Saturday (${nextSaturday.toDateString()}). You can now test "Delete tasks for saturday" in the Schedule tab.`,
+        [{ text: 'OK' }]
+      )
+    } catch (error: any) {
+      console.error('Error creating Saturday tasks:', error)
+      Alert.alert('Error', `Failed to create Saturday tasks: ${error.message || error.toString() || 'Unknown error'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleListTimelines = async () => {
     // DISABLED FOR MOCK MODE
     Alert.alert(
@@ -1007,6 +1061,17 @@ export default function DevScreen() {
             <FontAwesome name="download" size={16} color={colors.textSecondary} />
             <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Importing...' : 'Import Sample Timeline'}
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.button, loading && styles.disabledButton]} 
+            onPress={handleCreateSaturdayTasks}
+            disabled={loading}
+          >
+            <FontAwesome name="calendar" size={16} color="#fff" />
+            <Text style={styles.buttonText}>
+              {loading ? 'Creating...' : 'Create Saturday Tasks'}
             </Text>
           </TouchableOpacity>
           
