@@ -217,35 +217,30 @@ export default function CalendarScreen() {
       console.log('🎯 Calendar: Processing prompt:', promptText)
       
       if (promptText.includes('delete tasks for saturday')) {
-        console.log('🎯 Calendar: Hardcoded response - Deleting Saturday tasks...')
+        console.log('🎯 Calendar: Hardcoded response - Deleting all Saturday tasks...')
         
-        // Get current date to find next Saturday
-        const now = new Date()
-        const currentDay = now.getDay() // 0 = Sunday, 6 = Saturday
-        const daysUntilSaturday = currentDay === 6 ? 0 : (6 - currentDay + 7) % 7
-        
-        const nextSaturday = new Date(now)
-        nextSaturday.setDate(now.getDate() + daysUntilSaturday)
-        nextSaturday.setHours(0, 0, 0, 0)
-        
-        const saturdayEnd = new Date(nextSaturday)
-        saturdayEnd.setHours(23, 59, 59, 999)
-        
-        console.log(`🎯 Calendar: Looking for tasks on Saturday: ${nextSaturday.toDateString()}`)
-        
-        // Get all tasks and filter for Saturday
+        // Get all tasks and filter for ANY Saturday
         const allTasks = await internalDB.getAllTasks()
-        const saturdayTasks = allTasks.filter(task => {
-          const taskStart = new Date(task.start_time)
-          return taskStart >= nextSaturday && taskStart <= saturdayEnd
+        console.log(`🎯 Calendar: Total tasks in database: ${allTasks.length}`)
+        
+        // Debug: Show all tasks with their dates
+        allTasks.forEach(task => {
+          const taskDate = new Date(task.start_time)
+          console.log(`🎯 Calendar: Task: ${task.name} - Date: ${taskDate.toDateString()} - Day: ${taskDate.getDay()}`)
         })
         
-        console.log(`🎯 Calendar: Found ${saturdayTasks.length} Saturday tasks to delete`)
+        const saturdayTasks = allTasks.filter(task => {
+          const taskStart = new Date(task.start_time)
+          // Check if the task is on a Saturday (day 6)
+          return taskStart.getDay() === 6
+        })
+        
+        console.log(`🎯 Calendar: Found ${saturdayTasks.length} Saturday tasks to delete across all weeks`)
         
         if (saturdayTasks.length === 0) {
           Alert.alert(
             'No Saturday Tasks',
-            `No tasks found for Saturday (${nextSaturday.toDateString()}). Use the Dev tab to create some Saturday tasks first.`,
+            'No tasks found scheduled on any Saturday. Use the Dev tab to create some Saturday tasks first.',
             [{ text: 'OK' }]
           )
           setTaskInputText('')
@@ -270,7 +265,7 @@ export default function CalendarScreen() {
         // Show success message
         Alert.alert(
           'Tasks Deleted',
-          `Successfully deleted ${deletedCount} task${deletedCount !== 1 ? 's' : ''} scheduled for Saturday (${nextSaturday.toDateString()}).`,
+          `Successfully deleted ${deletedCount} Saturday task${deletedCount !== 1 ? 's' : ''} across all weeks.`,
           [{ text: 'OK' }]
         )
         
@@ -279,6 +274,93 @@ export default function CalendarScreen() {
         setShowTaskInput(false)
         setIsProcessing(false)
         return
+      }
+      
+      // Handle phone call with Shanghai scheduling
+      if (promptText.includes('phone call') && promptText.includes('shanghai')) {
+        console.log('🎯 Calendar: Hardcoded response - Scheduling phone call with Shanghai at 4pm...')
+        
+        // Extract the day from the prompt (default to tomorrow if not specified)
+        let targetDate = new Date()
+        
+        if (promptText.includes('monday')) {
+          const daysUntilMonday = (1 - targetDate.getDay() + 7) % 7 || 7
+          targetDate.setDate(targetDate.getDate() + daysUntilMonday)
+        } else if (promptText.includes('tuesday')) {
+          const daysUntilTuesday = (2 - targetDate.getDay() + 7) % 7 || 7
+          targetDate.setDate(targetDate.getDate() + daysUntilTuesday)
+        } else if (promptText.includes('wednesday')) {
+          const daysUntilWednesday = (3 - targetDate.getDay() + 7) % 7 || 7
+          targetDate.setDate(targetDate.getDate() + daysUntilWednesday)
+        } else if (promptText.includes('thursday')) {
+          const daysUntilThursday = (4 - targetDate.getDay() + 7) % 7 || 7
+          targetDate.setDate(targetDate.getDate() + daysUntilThursday)
+        } else if (promptText.includes('friday')) {
+          const daysUntilFriday = (5 - targetDate.getDay() + 7) % 7 || 7
+          targetDate.setDate(targetDate.getDate() + daysUntilFriday)
+        } else if (promptText.includes('saturday')) {
+          const daysUntilSaturday = (6 - targetDate.getDay() + 7) % 7 || 7
+          targetDate.setDate(targetDate.getDate() + daysUntilSaturday)
+        } else if (promptText.includes('sunday')) {
+          const daysUntilSunday = (0 - targetDate.getDay() + 7) % 7 || 7
+          targetDate.setDate(targetDate.getDate() + daysUntilSunday)
+        } else if (promptText.includes('tomorrow')) {
+          targetDate.setDate(targetDate.getDate() + 1)
+        } else if (promptText.includes('today')) {
+          // Keep current date
+        } else {
+          // Default to tomorrow if no day specified
+          targetDate.setDate(targetDate.getDate() + 1)
+        }
+        
+        // Set time to 4pm
+        targetDate.setHours(16, 0, 0, 0)
+        
+        // Create end time (1 hour duration)
+        const endTime = new Date(targetDate)
+        endTime.setHours(17, 0, 0, 0)
+        
+        // Extract who the call is with (default to "parents" if not clear)
+        let callWith = 'parents'
+        if (promptText.includes('parents')) {
+          callWith = 'parents'
+        } else if (promptText.includes('mom') || promptText.includes('mother')) {
+          callWith = 'mom'
+        } else if (promptText.includes('dad') || promptText.includes('father')) {
+          callWith = 'dad'
+        } else if (promptText.includes('family')) {
+          callWith = 'family'
+        }
+        
+        const taskName = `Phone call with ${callWith} in Shanghai`
+        
+        console.log(`🎯 Calendar: Creating task: ${taskName} on ${targetDate.toDateString()} at 4pm`)
+        
+        try {
+          await internalDB.addTaskWithDuration(
+            taskName,
+            targetDate.toISOString(),
+            endTime.toISOString()
+          )
+          
+          loadTasks()
+          
+          Alert.alert(
+            'Call Scheduled!',
+            `Scheduled "${taskName}" for ${targetDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at 4:00 PM (1 hour duration)`,
+            [{ text: 'OK' }]
+          )
+          
+          setTaskInputText('')
+          setShowTaskInput(false)
+          setIsProcessing(false)
+          return
+        } catch (error) {
+          console.error('❌ Calendar: Error creating phone call task:', error)
+          Alert.alert('Error', 'Failed to schedule phone call')
+          setIsProcessing(false)
+          return
+        }
       }
       
       // DISABLE ALL OTHER SUPABASE FUNCTIONALITY - MOCK MODE ONLY
