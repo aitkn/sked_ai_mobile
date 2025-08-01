@@ -231,22 +231,35 @@ export default function CalendarScreen() {
         prompt_text: finalPrompt
       };
       
+      console.log('🔍 About to insert into public.user_prompt table...')
+      console.log('🔍 Prompt data:', promptData)
+      
       const { data, error } = await supabase
-        .schema('skedai')
         .from('user_prompt')
-        .insert(promptData);
+        .insert(promptData)
+        .select(); // Add select to return inserted data
+        
+      console.log('🔍 Insert response - data:', data, 'error:', error)
 
       if (error) {
         console.error('❌ Error saving prompt:', error);
+        console.error('❌ Error details:', JSON.stringify(error, null, 2));
         Alert.alert(
-          'Error',
-          `Failed to save your prompt: ${error.message || 'Unknown error'}`,
+          'Database Error',
+          `Failed to save prompt to public.user_prompt:\n\nError: ${error.message}\nCode: ${error.code}`,
           [{ text: 'OK' }]
         );
         return;
       }
 
-      console.log('✅ Prompt saved successfully:', data);
+      console.log('✅ Prompt saved successfully to public.user_prompt!');
+      console.log('✅ Inserted data:', data);
+      
+      Alert.alert(
+        'Success',
+        'Your prompt has been saved successfully!',
+        [{ text: 'OK' }]
+      );
       
       // Reset modal state
       setTaskInputText('');

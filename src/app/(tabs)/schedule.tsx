@@ -24,6 +24,7 @@ import * as Notifications from 'expo-notifications'
 import * as Speech from 'expo-speech'
 import { internalDB, InternalTask } from '@/lib/internal-db'
 import { supabase } from '@/lib/supabase'
+import { generateSimpleMockTasks } from '@/lib/simple-mock-data'
 import { useFocusEffect } from 'expo-router'
 import { GlassMorphism } from '@/components/GlassMorphism'
 import { ThemedGradient } from '@/components/ThemedGradient'
@@ -84,7 +85,7 @@ export default function ScheduleScreen() {
   // Load internal tasks when component mounts and set up frequent refresh
   useEffect(() => {
     loadInternalTasks()
-    loadTimelineData() // Also load timeline data on startup
+    // loadTimelineData() // Disabled - using mock data only
     // Refresh internal tasks every 1 second for immediate updates
     const interval = setInterval(loadInternalTasks, 1000)
     return () => clearInterval(interval)
@@ -127,7 +128,7 @@ export default function ScheduleScreen() {
           console.log('📡 New timeline data:', payload.new)
           
           // When timeline is updated by processor, refresh the UI
-          loadTimelineData()
+          // loadTimelineData() // Disabled - using mock data only
         }
       )
       .on(
@@ -136,7 +137,7 @@ export default function ScheduleScreen() {
         (payload) => {
           console.log('📡 Timeline broadcast received:', payload)
           // Reload tasks when timeline is updated by processor
-          loadTimelineData()
+          // loadTimelineData() // Disabled - using mock data only
         }
       )
       .subscribe((status) => {
@@ -153,61 +154,35 @@ export default function ScheduleScreen() {
 
   const loadTimelineData = async () => {
     try {
-      // Get current user
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      console.log('📡 Loading simple mock data...')
       
-      if (authError || !user) {
-        console.log('📡 No authenticated user, skipping timeline fetch')
-        return
-      }
-
-      console.log('📡 Fetching timeline for user:', user.id)
+      // Generate simple mock tasks
+      const mockTasks = generateSimpleMockTasks()
       
-      // Fetch the latest timeline for the current user
-      const { data: timeline, error } = await supabase
-        .schema('skedai')
-        .from('user_timeline')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      if (error) {
-        console.log('📡 No timeline found or error:', error.message)
-        // No timeline found - clear all existing tasks to show empty schedule
-        console.log('📡 No timeline found, clearing all existing tasks...')
-        await internalDB.clearAllTasks()
-        // Reload internal tasks to show updated (empty) data
-        loadInternalTasks()
-        return
+      console.log(`📡 Generated ${mockTasks.length} simple mock tasks`)
+      
+      // Clear existing tasks and load mock data
+      await internalDB.clearAllTasks()
+      
+      // Add each mock task to internal database
+      for (const task of mockTasks) {
+        await internalDB.addTask(task)
       }
-
-      if (timeline && timeline.timeline_json) {
-        console.log('📡 Timeline found, processing tasks with category-based sync...')
-        
-        // Extract tasks from timeline_json
-        const timelineTasks = timeline.timeline_json.tasks || []
-        await syncTasksWithTimeline(timelineTasks)
-        
-        console.log(`📡 Processed ${timelineTasks.length} tasks from timeline`)
-      } else {
-        // No timeline found - clear all existing tasks
-        console.log('📡 No timeline found, clearing all existing tasks...')
-        await internalDB.clearAllTasks()
-      }
+      
+      console.log(`📡 Loaded ${mockTasks.length} mock tasks into internal database`)
       
       // Reload internal tasks to show updated data
       loadInternalTasks()
       
     } catch (error) {
-      console.error('📡 Error loading timeline data:', error)
+      console.error('📡 Error loading mock timeline data:', error)
     }
   }
 
-  // Enhanced category-based task synchronization
+  // Legacy function - replaced with mock data system
   const syncTasksWithTimeline = async (timelineTasks: any[]) => {
-    console.log('🔄 Starting category-based task sync...')
+    console.log('🔄 syncTasksWithTimeline is deprecated - using mock data instead')
+    return // Exit immediately - function disabled
     
     // 1. Get current tasks and categorize them by status
     const currentTasks = await internalDB.getAllTasks()
@@ -355,6 +330,14 @@ export default function ScheduleScreen() {
       )
       
       const convertedTasks = cleanedTasks.map(convertInternalTaskToTask)
+      
+      // If no tasks exist, load mock data automatically
+      if (convertedTasks.length === 0) {
+        console.log('📱 No tasks found, loading mock data...')
+        await loadTimelineData() // This will load mock data
+        return
+      }
+      
       setInternalTasks(convertedTasks)
     } catch (error) {
       console.error('Error loading internal tasks:', error)
@@ -1090,11 +1073,21 @@ export default function ScheduleScreen() {
     setIsProcessing(true)
     
     try {
+      console.log('🔍 Starting prompt submission process...')
+      
       // Get current user
       const { data: { user }, error: authError } = await supabase.auth.getUser()
       console.log('🔍 Auth check - user:', user ? 'exists' : 'null', 'error:', authError)
+      console.log('🔍 Auth user details:', user ? { id: user.id, email: user.email } : 'null')
+      
+      if (authError) {
+        console.error('❌ Authentication error:', authError)
+        Alert.alert('Authentication Error', authError.message)
+        return
+      }
       
       if (!user) {
+        console.error('❌ No authenticated user found')
         Alert.alert('Error', 'Please log in to save prompts')
         return
       }
@@ -1109,27 +1102,40 @@ export default function ScheduleScreen() {
       }
       
       console.log('🔍 Prompt data to insert:', promptData)
+      console.log('🔍 About to insert into public.user_prompt table...')
       
       const { data, error } = await supabase
-        .schema('skedai')
         .from('user_prompt')
         .insert(promptData)
+        .select() // Add select to return the inserted data
+      
+      console.log('🔍 Insert response - data:', data, 'error:', error)
 
       if (error) {
         console.error('❌ Error saving prompt:', error)
         console.error('❌ Error details:', JSON.stringify(error, null, 2))
         console.error('❌ Error code:', error.code)
         console.error('❌ Error message:', error.message)
+        console.error('❌ Error hint:', error.hint)
+        console.error('❌ Error details full:', error.details)
         
         Alert.alert(
-          'Error',
-          `Failed to save your prompt: ${error.message || 'Unknown error'}`,
+          'Database Error',
+          `Failed to save prompt to public.user_prompt table:\n\nError: ${error.message}\nCode: ${error.code}\nHint: ${error.hint || 'None'}`,
           [{ text: 'OK' }]
         )
         return
       }
 
-      console.log('✅ Prompt saved successfully:', data)
+      console.log('✅ Prompt saved successfully to public.user_prompt!')
+      console.log('✅ Inserted data:', data)
+      
+      // Show success message
+      Alert.alert(
+        'Success',
+        'Your prompt has been saved successfully!',
+        [{ text: 'OK' }]
+      )
       
       // Reset modal state
       setTaskInputText('')
@@ -1176,8 +1182,8 @@ export default function ScheduleScreen() {
           <RefreshControl 
             refreshing={false} 
             onRefresh={() => {
-              console.log('📱 Manual refresh triggered')
-              loadTimelineData() // This will clear tasks and load fresh timeline data
+              console.log('📱 Manual refresh triggered - generating fresh mock data')
+              loadTimelineData() // This loads fresh mock data
             }} 
           />
         }

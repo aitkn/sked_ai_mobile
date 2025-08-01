@@ -40,12 +40,10 @@ export class SyncService {
     })
   }
 
-  // Main sync function
+  // Main sync function - DISABLED for mock data mode
   async sync(): Promise<void> {
-    if (this.isSyncing) return
-    
-    this.isSyncing = true
-    console.log('Starting sync...')
+    console.log('🚫 Sync disabled - using mock data only')
+    return // Exit immediately - sync completely disabled
 
     try {
       const networkState = await NetInfo.fetch()
@@ -83,8 +81,8 @@ export class SyncService {
 
   // Push local changes to Supabase
   private async pushChanges(userId: string): Promise<void> {
-    const pendingTasks = await this.db.getPendingTasks()
-    console.log(`Pushing ${pendingTasks.length} pending tasks`)
+    console.log('🚫 pushChanges disabled - using mock data only')
+    return // Exit immediately - push disabled
     
     if (pendingTasks.length === 0) {
       console.log('No pending tasks to push')
@@ -185,22 +183,10 @@ export class SyncService {
     console.log(`After push: ${remainingPending.length} tasks still pending`)
   }
 
-  // Pull remote changes from Supabase
+  // Pull remote changes from Supabase - DISABLED for mock data mode
   private async pullChanges(userId: string): Promise<void> {
-    const metadata = await this.db.getSyncMetadata()
-    
-    // Get tasks updated since last sync
-    const { data: remoteTasks, error } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('updated_at', metadata.lastSyncAt)
-      .order('updated_at', { ascending: true })
-
-    if (error) {
-      console.error('Error pulling tasks:', error)
-      return
-    }
+    console.log('🚫 pullChanges disabled - using mock data only')
+    return // Exit immediately - sync disabled
 
     console.log(`Pulling ${remoteTasks?.length || 0} remote tasks`)
 
