@@ -1,0 +1,80 @@
+{
+  "buildFiles": [
+    "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/node_modules/@react-native-async-storage/async-storage/android/build/generated/source/codegen/jni/CMakeLists.txt",
+    "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/node_modules/react-native-edge-to-edge/android/build/generated/source/codegen/jni/CMakeLists.txt",
+    "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/node_modules/react-native-safe-area-context/android/src/main/jni/CMakeLists.txt",
+    "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/node_modules/react-native-screens/android/src/main/jni/CMakeLists.txt",
+    "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/node_modules/react-native/ReactAndroid/cmake-utils/default-app-setup/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/sergey/Android/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/android/app/.cxx/Debug/192g5l6p/x86_64",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/sergey/Android/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/android/app/.cxx/Debug/192g5l6p/x86_64",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "appmodules::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "x86_64",
+      "artifactName": "appmodules",
+      "output": "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/android/app/build/intermediates/cxx/Debug/192g5l6p/obj/x86_64/libappmodules.so",
+      "runtimeFiles": [
+        "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/android/app/build/intermediates/cxx/Debug/192g5l6p/obj/x86_64/libreact_codegen_safeareacontext.so",
+        "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/android/app/build/intermediates/cxx/Debug/192g5l6p/obj/x86_64/libreact_codegen_rnscreens.so",
+        "/home/sergey/.gradle/caches/8.13/transforms/492d12ddde8d0414cdeaa8d1c9a89b37/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.x86_64/libfbjni.so",
+        "/home/sergey/.gradle/caches/8.13/transforms/ecf58a1d5a3b5cc4faabc13e873181f2/transformed/react-android-0.79.5-debug/prefab/modules/jsi/libs/android.x86_64/libjsi.so",
+        "/home/sergey/.gradle/caches/8.13/transforms/ecf58a1d5a3b5cc4faabc13e873181f2/transformed/react-android-0.79.5-debug/prefab/modules/reactnative/libs/android.x86_64/libreactnative.so"
+      ]
+    },
+    "react_codegen_RNEdgeToEdge::@668218a48b60eb28aa9e": {
+      "toolchain": "toolchain",
+      "abi": "x86_64",
+      "artifactName": "react_codegen_RNEdgeToEdge"
+    },
+    "react_codegen_rnasyncstorage::@1596841e19ec5b9eeffe": {
+      "toolchain": "toolchain",
+      "abi": "x86_64",
+      "artifactName": "react_codegen_rnasyncstorage"
+    },
+    "react_codegen_rnscreens::@25bcbd507e98d3a854ad": {
+      "toolchain": "toolchain",
+      "abi": "x86_64",
+      "artifactName": "react_codegen_rnscreens",
+      "output": "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/android/app/build/intermediates/cxx/Debug/192g5l6p/obj/x86_64/libreact_codegen_rnscreens.so",
+      "runtimeFiles": [
+        "/home/sergey/.gradle/caches/8.13/transforms/ecf58a1d5a3b5cc4faabc13e873181f2/transformed/react-android-0.79.5-debug/prefab/modules/reactnative/libs/android.x86_64/libreactnative.so",
+        "/home/sergey/.gradle/caches/8.13/transforms/ecf58a1d5a3b5cc4faabc13e873181f2/transformed/react-android-0.79.5-debug/prefab/modules/jsi/libs/android.x86_64/libjsi.so",
+        "/home/sergey/.gradle/caches/8.13/transforms/492d12ddde8d0414cdeaa8d1c9a89b37/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.x86_64/libfbjni.so"
+      ]
+    },
+    "react_codegen_safeareacontext::@7984cd80db47aa7b952a": {
+      "toolchain": "toolchain",
+      "abi": "x86_64",
+      "artifactName": "react_codegen_safeareacontext",
+      "output": "/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/android/app/build/intermediates/cxx/Debug/192g5l6p/obj/x86_64/libreact_codegen_safeareacontext.so",
+      "runtimeFiles": [
+        "/home/sergey/.gradle/caches/8.13/transforms/492d12ddde8d0414cdeaa8d1c9a89b37/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.x86_64/libfbjni.so",
+        "/home/sergey/.gradle/caches/8.13/transforms/ecf58a1d5a3b5cc4faabc13e873181f2/transformed/react-android-0.79.5-debug/prefab/modules/jsi/libs/android.x86_64/libjsi.so",
+        "/home/sergey/.gradle/caches/8.13/transforms/ecf58a1d5a3b5cc4faabc13e873181f2/transformed/react-android-0.79.5-debug/prefab/modules/reactnative/libs/android.x86_64/libreactnative.so"
+      ]
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/home/sergey/Android/ndk/27.1.12297006/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/home/sergey/Android/ndk/27.1.12297006/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

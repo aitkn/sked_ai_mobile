@@ -32,8 +32,8 @@ export function generateSimpleMockTasks(useRandomTasks = false): Task[] {
     const endTime = new Date(startTime.getTime() + template.duration * 60 * 1000)
     
     const task: Task = {
-      id: `mock-${index + 1}`,
-      local_id: `mock-${index + 1}`,
+      id: `mock-${Date.now()}-${index + 1}`,
+      local_id: `mock-${Date.now()}-${index + 1}`,
       user_id: 'internal_user',
       name: template.name,
       status: template.status,

@@ -38,8 +38,8 @@ export default function DevScreen() {
   const [actions, setActions] = useState<InternalAction[]>([])
   const [loading, setLoading] = useState(false)
   
-  // Auto-import state
-  const [autoImportEnabled, setAutoImportEnabled] = useState(true)
+  // Auto-import state - DISABLED FOR MOCK MODE
+  const [autoImportEnabled, setAutoImportEnabled] = useState(false)
   const [lastImportTime, setLastImportTime] = useState<Date | null>(null)
   const [nextImportTime, setNextImportTime] = useState<Date | null>(null)
   const [importHistory, setImportHistory] = useState<Array<{timestamp: Date, success: boolean, message: string}>>([])
@@ -169,14 +169,40 @@ export default function DevScreen() {
     return nextImport
   }
 
-  // Auto-import timeline function
+  // Auto-import timeline function - DISABLED FOR MOCK MODE
   const performAutoImport = async () => {
     if (!autoImportEnabled) return
     
     try {
-      console.log('🔄 Performing auto-import of timeline...')
+      console.log('🔄 Auto-import disabled in mock mode - using local mock data instead')
       
-      // Use the same logic as handleImportTimeline
+      // Instead of importing from Supabase, just ensure we have mock data
+      const tasks = await internalDB.getAllTasks()
+      if (tasks.length === 0) {
+        console.log('🔄 No tasks found, loading mock data...')
+        // This will trigger the schedule screen to load mock data
+        const now = new Date()
+        setLastImportTime(now)
+        setImportHistory(prev => [
+          { timestamp: now, success: true, message: 'Mock data ready - check Schedule tab' },
+          ...prev.slice(0, 4)
+        ])
+        return
+      }
+      
+      // Mock successful import for existing tasks
+      const now = new Date()
+      setLastImportTime(now)
+      setImportHistory(prev => [
+        { timestamp: now, success: true, message: `Found ${tasks.length} existing tasks` },
+        ...prev.slice(0, 4)
+      ])
+      
+      console.log(`✅ Auto-import completed - ${tasks.length} tasks available`)
+      return
+      
+      // ORIGINAL SUPABASE CODE - DISABLED
+      /* 
       const { data, error } = await supabase
         .schema('skedai')
         .from('user_timeline')
@@ -236,6 +262,7 @@ export default function DevScreen() {
       
       await loadTasks()
       console.log(`✅ Auto-imported ${importedCount} tasks successfully`)
+      */
       
     } catch (error: any) {
       const now = new Date()
@@ -497,8 +524,61 @@ export default function DevScreen() {
     )
   }
 
+  const handleClearAllData = async () => {
+    Alert.alert(
+      'Clear All Data',
+      'This will delete ALL tasks, actions, and app data including AsyncStorage. This will fix any duplicate issues. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Everything',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true)
+              console.log('🧹 Starting complete data clear...')
+              
+              // Clear internal DB
+              await internalDB.clearAllTasks()
+              await internalDB.clearAllActions()
+              
+              // Clear AsyncStorage keys we know about
+              await AsyncStorage.removeItem('internal_tasks')
+              await AsyncStorage.removeItem('internal_actions')
+              
+              // Clear all scheduled notifications
+              await Notifications.cancelAllScheduledNotificationsAsync()
+              
+              console.log('🧹 All data cleared successfully')
+              
+              // Reload data
+              await loadTasks()
+              await loadActions()
+              
+              Alert.alert('Success', 'All app data cleared successfully. Any duplicate tasks should now be gone.')
+              
+            } catch (error: any) {
+              console.error('❌ Error clearing all data:', error)
+              Alert.alert('Error', `Failed to clear data: ${error.message}`)
+            } finally {
+              setLoading(false)
+            }
+          }
+        }
+      ]
+    )
+  }
 
   const handleTestDatabaseAccess = async () => {
+    // DISABLED FOR MOCK MODE
+    Alert.alert(
+      'Database Access Disabled', 
+      'Database connectivity is disabled in mock mode. All data is stored locally.',
+      [{ text: 'OK' }]
+    )
+    return
+    
+    /* ORIGINAL CODE - DISABLED
     try {
       setLoading(true)
       
@@ -550,9 +630,19 @@ export default function DevScreen() {
     } finally {
       setLoading(false)
     }
+    */
   }
 
   const handleListModels = async () => {
+    // DISABLED FOR MOCK MODE
+    Alert.alert(
+      'Models Disabled', 
+      'Model listing is disabled in mock mode. All functionality is local.',
+      [{ text: 'OK' }]
+    )
+    return
+    
+    /* ORIGINAL CODE - DISABLED
     try {
       setLoading(true)
       
@@ -592,6 +682,7 @@ export default function DevScreen() {
     } finally {
       setLoading(false)
     }
+    */
   }
 
   const handleCreateLocalTimeline = async () => {
@@ -666,6 +757,15 @@ export default function DevScreen() {
   }
 
   const handleListTimelines = async () => {
+    // DISABLED FOR MOCK MODE
+    Alert.alert(
+      'Timelines Disabled', 
+      'Timeline listing is disabled in mock mode. Use "Create Sample Timeline" for local testing.',
+      [{ text: 'OK' }]
+    )
+    return
+    
+    /* ORIGINAL CODE - DISABLED
     try {
       setLoading(true)
       
@@ -705,6 +805,7 @@ export default function DevScreen() {
     } finally {
       setLoading(false)
     }
+    */
   }
 
 
@@ -779,6 +880,15 @@ export default function DevScreen() {
   }
 
   const handleImportTimeline = async () => {
+    // DISABLED FOR MOCK MODE
+    Alert.alert(
+      'Import Disabled', 
+      'Timeline import from server is disabled in mock mode. Use "Import Sample Timeline" for local testing.',
+      [{ text: 'OK' }]
+    )
+    return
+    
+    /* ORIGINAL CODE - DISABLED
     try {
       setLoading(true)
       
@@ -855,6 +965,7 @@ export default function DevScreen() {
     } finally {
       setLoading(false)
     }
+    */
   }
 
   return (
@@ -896,6 +1007,17 @@ export default function DevScreen() {
             <FontAwesome name="download" size={16} color={colors.textSecondary} />
             <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Importing...' : 'Import Sample Timeline'}
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.button, styles.dangerButton, loading && styles.disabledButton]} 
+            onPress={handleClearAllData}
+            disabled={loading}
+          >
+            <FontAwesome name="trash" size={16} color="#fff" />
+            <Text style={styles.buttonText}>
+              {loading ? 'Clearing...' : 'Clear All Data (Fix Duplicates)'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1156,8 +1278,8 @@ export default function DevScreen() {
                     {notification.trigger?.type === 'timeInterval' 
                       ? `In ${notification.trigger.seconds}s`
                       : notification.trigger?.date 
-                      ? new Date(notification.trigger.date).toLocaleTimeString()
-                      : 'Immediate'
+                        ? new Date(notification.trigger.date).toLocaleTimeString()
+                        : 'Immediate'
                     }
                   </Text>
                 </View>
@@ -1256,6 +1378,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: '#ddd',
+  },
+  dangerButton: {
+    backgroundColor: '#f44336',
   },
   buttonText: {
     color: '#fff',

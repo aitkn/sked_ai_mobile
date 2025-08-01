@@ -1,0 +1,1 @@
+/home/sergey/git/startups/skedai/skedai-app/skedai-mobile/android/app/build/intermediates/cxx/Debug/192g5l6p/obj/x86_64

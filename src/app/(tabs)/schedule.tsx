@@ -78,6 +78,7 @@ export default function ScheduleScreen() {
   const [showProcessingIndicator, setShowProcessingIndicator] = useState(false)
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [contextMenuTask, setContextMenuTask] = useState<Task | null>(null)
+  const [isLoadingMockData, setIsLoadingMockData] = useState(false)
   const timerRef = useRef<NodeJS.Timeout | number | null>(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
   const expoNotificationService = useRef(new ExpoNotificationService()).current
@@ -153,7 +154,14 @@ export default function ScheduleScreen() {
 
 
   const loadTimelineData = async () => {
+    // Prevent multiple simultaneous calls
+    if (isLoadingMockData) {
+      console.log('📡 Mock data loading already in progress, skipping...')
+      return
+    }
+    
     try {
+      setIsLoadingMockData(true)
       console.log('📡 Loading simple mock data...')
       
       // Generate simple mock tasks
@@ -163,10 +171,22 @@ export default function ScheduleScreen() {
       
       // Clear existing tasks and load mock data
       await internalDB.clearAllTasks()
+      await internalDB.clearAllActions() // Also clear actions to prevent orphaned data
       
-      // Add each mock task to internal database
+      // Add each mock task to internal database with preserved IDs
       for (const task of mockTasks) {
-        await internalDB.addTask(task)
+        await internalDB.saveTask({
+          id: task.id,
+          name: task.name,
+          start_time: task.start_time,
+          end_time: task.end_time,
+          duration: (new Date(task.end_time).getTime() - new Date(task.start_time).getTime()) / 1000,
+          status: task.status,
+          priority: task.priority,
+          completed_at: task.completed_at,
+          created_at: task.created_at,
+          updated_at: task.updated_at
+        })
       }
       
       console.log(`📡 Loaded ${mockTasks.length} mock tasks into internal database`)
@@ -176,6 +196,8 @@ export default function ScheduleScreen() {
       
     } catch (error) {
       console.error('📡 Error loading mock timeline data:', error)
+    } finally {
+      setIsLoadingMockData(false)
     }
   }
 
@@ -1193,8 +1215,8 @@ export default function ScheduleScreen() {
         {!runningTask && sortedTasks.some(shouldTaskStartNow) && (
           <View style={styles.readySection}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Ready to Start</Text>
-            {sortedTasks.filter(shouldTaskStartNow).map((task) => (
-              <GlassMorphism key={task.local_id} style={[styles.readyCard, { backgroundColor: '#4CAF50' }]} intensity="strong">
+            {sortedTasks.filter(shouldTaskStartNow).map((task, index) => (
+              <GlassMorphism key={`ready-${task.local_id}-${index}`} style={[styles.readyCard, { backgroundColor: '#4CAF50' }]} intensity="strong">
                 <View style={styles.taskInfo}>
                   <Text style={[styles.readyTaskName, { color: '#fff' }]}>{task.name}</Text>
                   <Text style={[styles.readyTaskTime, { color: '#fff' }]}>
@@ -1313,8 +1335,8 @@ export default function ScheduleScreen() {
         {pausedTasks.length > 0 && (
           <View style={styles.pausedSection}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Paused Tasks</Text>
-            {pausedTasks.map((task) => (
-              <GlassMorphism key={task.local_id} style={styles.pausedCard} intensity="light" borderRadius={12}>
+            {pausedTasks.map((task, index) => (
+              <GlassMorphism key={`paused-${task.local_id}-${index}`} style={styles.pausedCard} intensity="light" borderRadius={12}>
                 <TouchableOpacity
                   onLongPress={() => handleLongPress(task)}
                   delayLongPress={500}
@@ -1380,7 +1402,7 @@ export default function ScheduleScreen() {
                   
                   return (
                     <GlassMorphism
-                      key={task.local_id}
+                      key={`upcoming-${task.local_id}-${index}`}
                       style={[styles.upcomingCard, index === 0 && styles.upcomingCardFirst]}
                       intensity={index === 0 ? "medium" : "light"}
                     >
