@@ -1,5 +1,6 @@
 // Simple mock data for tasks without complex timeline sync
 import { Task } from './internal-db'
+import { timelineWithoutGym, importTimelineToTasks } from './demo-timelines'
 
 export function generateSimpleMockTasks(useRandomTasks = false): Task[] {
   const now = new Date()
@@ -54,4 +55,9 @@ export function generateSimpleMockTasks(useRandomTasks = false): Task[] {
   })
 
   return tasks
+}
+
+// Generate demo weekly schedule from timeline
+export function generateDemoWeeklySchedule(): Task[] {
+  return importTimelineToTasks(timelineWithoutGym, false) // false = start from Monday
 }

@@ -25,6 +25,7 @@ import * as Speech from 'expo-speech'
 import { internalDB, InternalTask } from '@/lib/internal-db'
 import { supabase } from '@/lib/supabase'
 import { generateSimpleMockTasks } from '@/lib/simple-mock-data'
+import { timelineWithGym, importTimelineToTasks, addShowerTasksToSchedule, addBusinessTripToWeekend } from '@/lib/demo-timelines'
 import { useFocusEffect } from 'expo-router'
 import { GlassMorphism } from '@/components/GlassMorphism'
 import { ThemedGradient } from '@/components/ThemedGradient'
@@ -1100,10 +1101,13 @@ export default function ScheduleScreen() {
     try {
       console.log('🔍 Starting prompt submission process...')
       
-      // HARDCODED FUNCTIONALITY - Handle specific prompts locally
+      // Process the prompt text
       const promptText = taskInputText.trim().toLowerCase()
       console.log('🎯 Processed prompt text:', promptText)
       
+      // HARDCODED FUNCTIONALITY - Handle specific prompts locally
+      
+      // Handle delete Saturday tasks
       if (promptText.includes('delete tasks for saturday')) {
         console.log('🎯 Hardcoded response: Deleting Saturday tasks...')
         
@@ -1169,7 +1173,180 @@ export default function ScheduleScreen() {
         return
       }
       
-      // DISABLE ALL SUPABASE FUNCTIONALITY - MOCK MODE ONLY
+      // Check if this is a gym-related prompt
+      const isGymPrompt = promptText.includes('gym') || 
+                         promptText.includes('workout') || 
+                         promptText.includes('exercise') ||
+                         promptText.includes('fitness')
+      
+      const isShowerPrompt = promptText.includes('shower') || 
+                            promptText.includes('wash') ||
+                            promptText.includes('clean')
+      
+      const isBusinessTripPrompt = (promptText.includes('business trip') || 
+                                   promptText.includes('work') && promptText.includes('weekend')) &&
+                                   (promptText.includes('run') || promptText.includes('running'))
+      
+      if (isBusinessTripPrompt) {
+        // Handle business trip with running prompt
+        console.log('💼 Business trip prompt detected! Updating weekend schedule...')
+        
+        // Get current tasks
+        const currentTasks = await internalDB.getAllTasks()
+        const taskObjects = currentTasks.map(convertInternalTaskToTask)
+        
+        // Replace weekend with business trip schedule
+        const updatedTasks = addBusinessTripToWeekend(taskObjects)
+        
+        // Clear and re-add all tasks
+        await internalDB.clearAllTasks()
+        
+        let importedCount = 0
+        for (const task of updatedTasks) {
+          await internalDB.saveTask({
+            id: task.id,
+            name: task.name,
+            start_time: task.start_time,
+            end_time: task.end_time,
+            duration: (new Date(task.end_time).getTime() - new Date(task.start_time).getTime()) / 1000,
+            status: task.status as any,
+            priority: task.priority,
+            created_at: task.created_at,
+            updated_at: task.updated_at,
+            completed_at: task.completed_at
+          })
+          importedCount++
+        }
+        
+        // Reload tasks
+        await loadInternalTasks()
+        
+        // Show success message
+        Alert.alert(
+          'Weekend Schedule Updated!',
+          'Your weekend has been rescheduled with business trip work sessions (9 AM - 5 PM) and morning runs (7-8 AM) during optimal weather windows.',
+          [{ text: 'OK' }]
+        )
+        
+        // Reset modal state
+        setTaskInputText('')
+        setShowTaskInput(false)
+        
+        // Show processing indicator for 2 seconds
+        setShowProcessingIndicator(true)
+        setTimeout(() => {
+          setShowProcessingIndicator(false)
+        }, 2000)
+        
+        return
+      }
+      
+      if (isShowerPrompt) {
+        // Handle shower prompt - add shower tasks intelligently
+        console.log('🚿 Shower prompt detected! Adding shower tasks...')
+        
+        // Get current tasks
+        const currentTasks = await internalDB.getAllTasks()
+        const taskObjects = currentTasks.map(convertInternalTaskToTask)
+        
+        // Add shower tasks intelligently (after gym if present)
+        const tasksWithShowers = addShowerTasksToSchedule(taskObjects)
+        
+        // Clear and re-add all tasks including showers
+        await internalDB.clearAllTasks()
+        
+        let importedCount = 0
+        for (const task of tasksWithShowers) {
+          await internalDB.saveTask({
+            id: task.id,
+            name: task.name,
+            start_time: task.start_time,
+            end_time: task.end_time,
+            duration: (new Date(task.end_time).getTime() - new Date(task.start_time).getTime()) / 1000,
+            status: task.status as any,
+            priority: task.priority,
+            created_at: task.created_at,
+            updated_at: task.updated_at,
+            completed_at: task.completed_at
+          })
+          importedCount++
+        }
+        
+        // Reload tasks
+        await loadInternalTasks()
+        
+        // Show success message
+        Alert.alert(
+          'Schedule Updated!',
+          'Daily shower tasks have been added to your schedule. Showers are scheduled after gym sessions on workout days, and in the morning on rest days.',
+          [{ text: 'OK' }]
+        )
+        
+        // Reset modal state
+        setTaskInputText('')
+        setShowTaskInput(false)
+        
+        // Show processing indicator for 2 seconds
+        setShowProcessingIndicator(true)
+        setTimeout(() => {
+          setShowProcessingIndicator(false)
+        }, 2000)
+        
+        return
+      }
+      
+      if (isGymPrompt) {
+        // Handle gym prompt - replace timeline with gym schedule
+        console.log('🏋️ Gym prompt detected! Replacing schedule...')
+        
+        // Clear existing tasks
+        await internalDB.clearAllTasks()
+        
+        // Import the gym timeline
+        const gymTasks = importTimelineToTasks(timelineWithGym, false)
+        
+        // Save all gym tasks
+        let importedCount = 0
+        for (const task of gymTasks) {
+          await internalDB.saveTask({
+            id: task.id,
+            name: task.name,
+            start_time: task.start_time,
+            end_time: task.end_time,
+            duration: (new Date(task.end_time).getTime() - new Date(task.start_time).getTime()) / 1000,
+            status: task.status as any,
+            priority: task.priority,
+            created_at: task.created_at,
+            updated_at: task.updated_at,
+            completed_at: task.completed_at
+          })
+          importedCount++
+        }
+        
+        // Reload tasks
+        await loadInternalTasks()
+        
+        // Show success message
+        Alert.alert(
+          'Schedule Updated!',
+          `Your schedule has been optimized with ${isGymPrompt ? '5 gym sessions' : 'your requested tasks'} added throughout the week.`,
+          [{ text: 'OK' }]
+        )
+        
+        // Reset modal state
+        setTaskInputText('')
+        setShowTaskInput(false)
+        
+        // Show processing indicator for 2 seconds
+        setShowProcessingIndicator(true)
+        setTimeout(() => {
+          setShowProcessingIndicator(false)
+        }, 2000)
+        
+        return
+      }
+      
+      // For other prompts, show a generic message
       Alert.alert(
         'AI Schedule Request Received', 
         'Your schedule request has been received. In the full version, AI will process this and create an optimized timeline for you.',

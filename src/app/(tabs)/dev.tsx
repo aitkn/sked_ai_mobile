@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase'
 import { useFocusEffect } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
+import { generateDemoWeeklySchedule } from '@/lib/simple-mock-data'
 
 // Timeline interfaces
 interface TimelineTask {
@@ -863,6 +864,52 @@ export default function DevScreen() {
   }
 
 
+  const handleGenerateDemoWeeklySchedule = async () => {
+    try {
+      setLoading(true)
+      
+      console.log('Generating demo weekly schedule...')
+      
+      // Clear existing tasks
+      await internalDB.clearAllTasks()
+      
+      // Generate the demo tasks
+      const demoTasks = generateDemoWeeklySchedule()
+      
+      // Import each task into the internal database
+      let importedCount = 0
+      for (const task of demoTasks) {
+        await internalDB.saveTask({
+          id: task.id,
+          name: task.name,
+          start_time: task.start_time,
+          end_time: task.end_time,
+          duration: InternalDB.calculateDuration(task.start_time, task.end_time),
+          status: task.status as any,
+          priority: task.priority,
+          created_at: task.created_at,
+          updated_at: task.updated_at,
+          completed_at: task.completed_at
+        })
+        importedCount++
+      }
+      
+      await loadTasks()
+      await loadActions()
+      
+      Alert.alert(
+        'Demo Schedule Created!',
+        `Successfully generated ${importedCount} tasks for the week. Check the Schedule and Calendar tabs to see them.`,
+        [{ text: 'OK' }]
+      )
+    } catch (error: any) {
+      console.error('Error generating demo schedule:', error)
+      Alert.alert('Error', `Failed to generate demo schedule: ${error.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleImportLocalTimeline = async () => {
     try {
       setLoading(true)
@@ -1039,6 +1086,17 @@ export default function DevScreen() {
             <FontAwesome name="plus" size={16} color="#fff" />
             <Text style={styles.buttonText}>
               {loading ? 'Creating...' : 'Add Test Task'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.button, loading && styles.disabledButton]} 
+            onPress={handleGenerateDemoWeeklySchedule}
+            disabled={loading}
+          >
+            <FontAwesome name="calendar" size={16} color="#fff" />
+            <Text style={styles.buttonText}>
+              {loading ? 'Generating...' : 'Generate Demo Weekly Schedule'}
             </Text>
           </TouchableOpacity>
           
