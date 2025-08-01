@@ -19,6 +19,8 @@ import { makeRedirectUri } from 'expo-auth-session'
 import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
 import { FontAwesome } from '@expo/vector-icons'
+
+
 // Conditionally import Google Sign-In to avoid errors in Expo Go
 let GoogleSignin: any = null;
 let GoogleSigninButton: any = null;
@@ -47,6 +49,7 @@ export default function Auth() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
+  const [isAppleAuthAvailable, setIsAppleAuthAvailable] = useState(false)
   const router = useRouter()
   
   const redirectTo = makeRedirectUri({
@@ -85,8 +88,24 @@ export default function Auth() {
     testScheme()
   }, [])
 
-  // Configure Google Sign-In if available
+  // Configure Google Sign-In and check Apple Auth availability
   useEffect(() => {
+    // Check Apple authentication availability
+    const checkAppleAuth = async () => {
+      if (Platform.OS === 'ios') {
+        try {
+          const { isAppleAuthenticationAvailable } = require('../utils/appleAuth')
+          const available = await isAppleAuthenticationAvailable()
+          setIsAppleAuthAvailable(available)
+        } catch (error) {
+          console.log('Apple Authentication not available')
+          setIsAppleAuthAvailable(false)
+        }
+      }
+    }
+    
+    checkAppleAuth()
+
     // Skip Google Sign-In configuration on web or if not available
     if (Platform.OS === 'web' || !GoogleSignin) return
 
@@ -391,7 +410,24 @@ export default function Auth() {
     setLoading(false)
   }
 
-  const signInWithApple = () => signInWithProvider('apple')
+  const signInWithApple = async () => {
+    // Use native Apple Sign-In implementation instead of web OAuth
+    const { initiateAppleSignIn } = require('../utils/appleAuth')
+    
+    try {
+      setLoading(true)
+      await initiateAppleSignIn()
+      console.log('✅ Apple Sign-In completed successfully!')
+    } catch (error: any) {
+      console.error('❌ Apple Sign-In error:', error)
+      Alert.alert(
+        'Apple Sign In Failed',
+        error.message || 'Failed to sign in with Apple',
+        [{ text: 'OK' }]
+      )
+    }
+    setLoading(false)
+  }
 
   return (
     <KeyboardAvoidingView
@@ -465,7 +501,7 @@ export default function Auth() {
             </TouchableOpacity>
           )}
           
-          {Platform.OS === 'ios' && (
+          {Platform.OS === 'ios' && isAppleAuthAvailable && (
             <TouchableOpacity
               style={[styles.button, styles.socialButton, styles.appleButton]}
               onPress={signInWithApple}
