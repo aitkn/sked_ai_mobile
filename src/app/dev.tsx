@@ -6,15 +6,17 @@ import {
   Alert,
   ScrollView,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { Text } from '@/components/Themed'
 import { FontAwesome } from '@expo/vector-icons'
 import Colors from '@/constants/Colors'
 import { useTheme } from '@/contexts/ThemeContext'
 import { internalDB, InternalTask, InternalAction, InternalDB } from '@/lib/internal-db'
 import { supabase } from '@/lib/supabase'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
+import ThemedIcon from '@/components/ThemedIcon'
 
 // Timeline interfaces
 interface TimelineTask {
@@ -34,6 +36,7 @@ interface TimelineData {
 
 export default function DevScreen() {
   const { actualTheme, colors } = useTheme()
+  const router = useRouter()
   const [tasks, setTasks] = useState<InternalTask[]>([])
   const [actions, setActions] = useState<InternalAction[]>([])
   const [loading, setLoading] = useState(false)
@@ -969,7 +972,26 @@ export default function DevScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
+      {/* Navigation Header */}
+      <View style={styles.navigationHeader}>
+        <TouchableOpacity 
+          style={styles.navButton}
+          onPress={() => router.back()}
+        >
+          <ThemedIcon 
+            name="arrow-left" 
+            size={24} 
+            color={colors.text}
+            glassIntensity="light"
+          />
+        </TouchableOpacity>
+        
+        <Text style={[styles.screenTitle, { color: colors.text }]}>Developer Tools</Text>
+        
+        <View style={styles.navButton} />
+      </View>
+      
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Local Task Testing</Text>
@@ -978,7 +1000,7 @@ export default function DevScreen() {
           </Text>
           
           <TouchableOpacity 
-            style={[styles.button, loading && styles.disabledButton]} 
+            style={[styles.button, { backgroundColor: colors.tint }, loading && styles.disabledButton]} 
             onPress={handleAddQuickTask}
             disabled={loading}
           >
@@ -1144,7 +1166,7 @@ export default function DevScreen() {
 
         {/* Auto Timeline Import Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Auto Timeline Import</Text>
+          <Text style={styles.sectionTitle}>Auto Timeline Import</Text>
           <Text style={[styles.sectionDescription, { color: colors.textSecondary }]}>
             Automatically import timeline data every 5 minutes
           </Text>
@@ -1334,21 +1356,43 @@ export default function DevScreen() {
           </View>
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  navigationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  navButton: {
+    padding: 8,
+    minWidth: 40,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenTitle: {
+    fontSize: 20,
+    fontWeight: '600',
   },
   scrollContent: {
-    padding: 20,
+    paddingVertical: 10,
     paddingBottom: 100,
   },
   section: {
-    marginBottom: 30,
+    marginHorizontal: 20,
+    marginVertical: 10,
+    padding: 20,
   },
   sectionTitle: {
     fontSize: 20,

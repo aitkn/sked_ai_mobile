@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { Text } from '@/components/Themed'
 import { Task } from '@/lib/offline/database'
 import Colors from '@/constants/Colors'
@@ -25,7 +26,7 @@ import * as Speech from 'expo-speech'
 import { internalDB, InternalTask } from '@/lib/internal-db'
 import { supabase } from '@/lib/supabase'
 import { generateSimpleMockTasks } from '@/lib/simple-mock-data'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { GlassMorphism } from '@/components/GlassMorphism'
 import { ThemedGradient } from '@/components/ThemedGradient'
 
@@ -66,6 +67,7 @@ const convertInternalTaskToTask = (internalTask: InternalTask): Task => ({
 
 export default function ScheduleScreen() {
   const { actualTheme, colors } = useTheme()
+  const router = useRouter()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [internalTasks, setInternalTasks] = useState<Task[]>([])
   const [alertedTasks, setAlertedTasks] = useState<Set<string>>(new Set())
@@ -1183,9 +1185,39 @@ export default function ScheduleScreen() {
 
   return (
     <ThemedGradient style={styles.container}>
-      {/* Processing Indicator */}
-      {showProcessingIndicator && (
-        <View style={styles.processingBanner}>
+      <SafeAreaView style={styles.safeArea}>
+        {/* Navigation Header */}
+        <View style={styles.navigationHeader}>
+          <TouchableOpacity 
+            style={styles.navButton}
+            onPress={() => router.replace('/calendar')}
+          >
+            <ThemedIcon 
+              name="calendar" 
+              size={24} 
+              color={colors.text}
+              glassIntensity="light"
+            />
+          </TouchableOpacity>
+          
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Schedule</Text>
+          
+          <TouchableOpacity 
+            style={styles.navButton}
+            onPress={() => router.push('/settings')}
+          >
+            <ThemedIcon 
+              name="cog" 
+              size={24} 
+              color={colors.text}
+              glassIntensity="light"
+            />
+          </TouchableOpacity>
+        </View>
+        
+        {/* Processing Indicator */}
+        {showProcessingIndicator && (
+          <View style={styles.processingBanner}>
           <ThemedIcon 
             name="cog" 
             size={16} 
@@ -1651,6 +1683,7 @@ export default function ScheduleScreen() {
           containerStyle={{ padding: 0, backgroundColor: 'transparent', borderWidth: 0 }}
         />
       </TouchableOpacity>
+      </SafeAreaView>
     </ThemedGradient>
   )
 }
@@ -1658,6 +1691,27 @@ export default function ScheduleScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  safeArea: {
+    flex: 1,
+  },
+  navigationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  navButton: {
+    padding: 8,
+    minWidth: 40,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenTitle: {
+    fontSize: 20,
+    fontWeight: '600',
   },
   processingBanner: {
     backgroundColor: Colors.light.tint,

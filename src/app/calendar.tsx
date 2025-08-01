@@ -1,4 +1,5 @@
 import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/Themed';
 import { useState, useEffect } from 'react';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
@@ -10,9 +11,11 @@ import Colors from '@/constants/Colors';
 import { GlassMorphism } from '@/components/GlassMorphism';
 import { ThemedGradient } from '@/components/ThemedGradient';
 import { internalDB, InternalTask } from '@/lib/internal-db';
+import { useRouter } from 'expo-router';
 
 export default function CalendarScreen() {
   const { actualTheme, colors } = useTheme();
+  const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [taskInputText, setTaskInputText] = useState('');
@@ -499,9 +502,39 @@ export default function CalendarScreen() {
 
   return (
     <ThemedGradient style={styles.container}>
-      {/* Processing Indicator */}
-      {showProcessingIndicator && (
-        <View style={[styles.processingBanner, { backgroundColor: Colors.light.tint }]}>
+      <SafeAreaView style={styles.safeArea}>
+        {/* Navigation Header */}
+        <View style={styles.navigationHeader}>
+          <TouchableOpacity 
+            style={styles.navButton}
+            onPress={() => router.replace('/schedule')}
+          >
+            <ThemedIcon 
+              name="list" 
+              size={24} 
+              color={colors.text}
+              glassIntensity="light"
+            />
+          </TouchableOpacity>
+          
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Calendar</Text>
+          
+          <TouchableOpacity 
+            style={styles.navButton}
+            onPress={() => router.push('/settings')}
+          >
+            <ThemedIcon 
+              name="cog" 
+              size={24} 
+              color={colors.text}
+              glassIntensity="light"
+            />
+          </TouchableOpacity>
+        </View>
+        
+        {/* Processing Indicator */}
+        {showProcessingIndicator && (
+          <View style={[styles.processingBanner, { backgroundColor: Colors.light.tint }]}>
           <ThemedIcon 
             name="cog" 
             size={16} 
@@ -513,22 +546,10 @@ export default function CalendarScreen() {
         </View>
       )}
       
-      <ScrollView style={styles.scrollView}>
-        <GlassMorphism intensity={actualTheme === 'dark' ? 'strong' : 'strong'} style={styles.header}>
-          <Text style={[styles.title, { color: colors.text }]}>Calendar</Text>
-          <Text style={[styles.subtitle, { color: colors.text }]}>
-            {selectedDate.toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}
-          </Text>
-        </GlassMorphism>
-      
-      <GlassMorphism intensity={actualTheme === 'dark' ? 'strong' : 'strong'} style={styles.calendarContainer} borderRadius={20}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <GlassMorphism intensity={actualTheme === 'dark' ? 'strong' : 'strong'} style={styles.calendarContainer} borderRadius={20}>
         <GlassMorphism intensity={actualTheme === 'dark' ? 'light' : 'medium'} style={styles.monthNavigation} borderRadius={12}>
-          <View style={styles.navigationHeader}>
+          <View style={styles.monthNavigationHeader}>
             <GlassMorphism 
               intensity={actualTheme === 'dark' ? 'light' : 'strong'} 
               style={styles.monthTitleContainer} 
@@ -786,6 +807,7 @@ export default function CalendarScreen() {
           containerStyle={{ padding: 0, backgroundColor: 'transparent', borderWidth: 0 }}
         />
       </TouchableOpacity>
+      </SafeAreaView>
     </ThemedGradient>
   );
 }
@@ -793,6 +815,27 @@ export default function CalendarScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  safeArea: {
+    flex: 1,
+  },
+  navigationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  navButton: {
+    padding: 8,
+    minWidth: 40,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenTitle: {
+    fontSize: 20,
+    fontWeight: '600',
   },
   scrollView: {
     flex: 1,
@@ -831,8 +874,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     opacity: 0.7,
   },
+  scrollContent: {
+    paddingBottom: 100,
+  },
   calendarContainer: {
-    margin: 20,
+    marginHorizontal: 20,
+    marginTop: 0,
     marginBottom: 10,
     padding: 16,
   },
@@ -844,7 +891,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  navigationHeader: {
+  monthNavigationHeader: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
