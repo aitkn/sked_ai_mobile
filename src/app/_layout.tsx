@@ -84,7 +84,7 @@ function RootLayoutNav() {
       router.replace('/auth');
     } else if (session && inAuthGroup) {
       // Redirect away from auth if session exists
-      router.replace('/(tabs)');
+      router.replace('/schedule');
     }
   }, [session, segments, isLoading]);
 
@@ -98,14 +98,20 @@ function RootLayoutNav() {
         <TaskProvider>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="auth" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="schedule" options={{ headerShown: false, animation: 'none' }} />
+            <Stack.Screen name="calendar" options={{ headerShown: false, animation: 'none' }} />
+            <Stack.Screen name="settings" options={{ headerShown: false }} />
+            <Stack.Screen name="dev" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
           </Stack>
         </TaskProvider>
       ) : (
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="auth" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="schedule" options={{ headerShown: false, animation: 'none' }} />
+          <Stack.Screen name="calendar" options={{ headerShown: false, animation: 'none' }} />
+          <Stack.Screen name="settings" options={{ headerShown: false }} />
+          <Stack.Screen name="dev" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         </Stack>
       )}
