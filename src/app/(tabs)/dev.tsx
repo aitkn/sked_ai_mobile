@@ -169,83 +169,10 @@ export default function DevScreen() {
     return nextImport
   }
 
-  // Auto-import timeline function
+  // Auto-import timeline function - DISABLED
   const performAutoImport = async () => {
-    if (!autoImportEnabled) return
-    
-    try {
-      console.log('🔄 Performing auto-import of timeline...')
-      
-      // Use the same logic as handleImportTimeline
-      const { data, error } = await supabase
-        .schema('skedai')
-        .from('user_timeline')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1)
-      
-      if (error) throw error
-      
-      if (!data || data.length === 0) {
-        throw new Error('No timeline data found')
-      }
-      
-      const timelineEntry = data[0]
-      const timelineData = timelineEntry.timeline_json as TimelineData
-      
-      // Clear existing tasks before importing new timeline
-      await internalDB.clearAllTasks()
-      
-      // Import each task from the timeline
-      let importedCount = 0
-      const now = new Date()
-      
-      // Get the date from the first task to calculate offset
-      const firstTaskDate = timelineData.tasks.length > 0 
-        ? new Date(timelineData.tasks[0].start_time) 
-        : now
-      
-      // Calculate the time offset to adjust tasks to today
-      const originalDate = new Date(firstTaskDate)
-      originalDate.setHours(0, 0, 0, 0)
-      const todayDate = new Date(now)
-      todayDate.setHours(0, 0, 0, 0)
-      const dayOffset = todayDate.getTime() - originalDate.getTime()
-      
-      for (const timelineTask of timelineData.tasks) {
-        // Adjust the task times to today
-        const originalStart = new Date(timelineTask.start_time)
-        const originalEnd = new Date(timelineTask.end_time)
-        
-        const adjustedStart = new Date(originalStart.getTime() + dayOffset)
-        const adjustedEnd = new Date(originalEnd.getTime() + dayOffset)
-        
-        await internalDB.addTaskWithDuration(
-          timelineTask.name,
-          adjustedStart.toISOString(),
-          adjustedEnd.toISOString()
-        )
-        importedCount++
-      }
-      
-      setLastImportTime(now)
-      setImportHistory(prev => [
-        { timestamp: now, success: true, message: `Imported ${importedCount} tasks` },
-        ...prev.slice(0, 4) // Keep last 5 entries
-      ])
-      
-      await loadTasks()
-      console.log(`✅ Auto-imported ${importedCount} tasks successfully`)
-      
-    } catch (error: any) {
-      const now = new Date()
-      const errorMessage = error.message || 'Unknown error'
-      setImportHistory(prev => [
-        { timestamp: now, success: false, message: errorMessage },
-        ...prev.slice(0, 4)
-      ])
-      console.error('❌ Auto-import failed:', error)
-    }
+    console.log('🚫 Auto-import disabled - using mock data only')
+    return // Exit immediately - auto-import disabled
   }
 
   // Load scheduled notifications
@@ -499,57 +426,9 @@ export default function DevScreen() {
 
 
   const handleTestDatabaseAccess = async () => {
-    try {
-      setLoading(true)
-      
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        Alert.alert('Not authenticated')
-        return
-      }
-      
-      console.log('Testing database access...')
-      
-      // Test 1: Check skedai.model table
-      const { data: modelData, error: modelError } = await supabase
-        .schema('skedai')
-        .from('model')
-        .select('*')
-        .limit(1)
-      
-      console.log('skedai.model access:', { data: modelData, error: modelError })
-      
-      // Test 2: Check skedai.user_timeline table
-      const { data: userTimelineData, error: userTimelineError } = await supabase
-        .schema('skedai')
-        .from('user_timeline')
-        .select('*')
-        .limit(1)
-      
-      console.log('skedai.user_timeline access:', { data: userTimelineData, error: userTimelineError })
-      
-      // Test 3: Check auth.users table
-      const { data: authUsersData, error: authUsersError } = await supabase
-        .from('auth.users')
-        .select('*')
-        .limit(5)
-      
-      console.log('auth.users access:', { data: authUsersData, error: authUsersError })
-      
-      // Test 4: Get current user info
-      const { data: { user: currentUser }, error: currentUserError } = await supabase.auth.getUser()
-      console.log('Current authenticated user:', { user: currentUser?.id, email: currentUser?.email, error: currentUserError })
-      
-      Alert.alert(
-        'Database Test Complete',
-        'Check console for results. Look for access permissions and table structures.'
-      )
-    } catch (error: any) {
-      console.error('Database test error:', error)
-      Alert.alert('Error', `Database test failed: ${error.message}`)
-    } finally {
-      setLoading(false)
-    }
+    console.log('🚫 Database access test disabled - using mock data only')
+    Alert.alert('Test Disabled', 'Database access tests have been disabled. The app now uses mock data only.')
+    return // Exit immediately - test disabled
   }
 
   const handleListModels = async () => {
@@ -666,45 +545,9 @@ export default function DevScreen() {
   }
 
   const handleListTimelines = async () => {
-    try {
-      setLoading(true)
-      
-      console.log('Listing available timelines...')
-      
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        Alert.alert('Authentication Error', 'You need to be signed in to list timelines.')
-        return
-      }
-      
-      // List timelines from skedai.user_timeline table
-      const { data: timelineData, error: timelineError } = await supabase
-        .schema('skedai')
-        .from('user_timeline')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-      
-      console.log('Timelines response - data:', timelineData, 'error:', timelineError)
-      
-      if (timelineError) {
-        console.error('Timeline listing error:', timelineError)
-        throw new Error(`Failed to list timelines: ${timelineError.message} (Code: ${timelineError.code})`)
-      }
-      
-      Alert.alert(
-        'Available Timelines',
-        timelineData && timelineData.length > 0 
-          ? `Found ${timelineData.length} timelines. Check console for details.`
-          : 'No timelines found for your user.',
-        [{ text: 'OK' }]
-      )
-    } catch (error: any) {
-      console.error('Error listing timelines:', error)
-      Alert.alert('Error', `Failed to list timelines: ${error.message || error.toString() || 'Unknown error'}`)
-    } finally {
-      setLoading(false)
-    }
+    console.log('🚫 Timeline listing disabled - using mock data only')
+    Alert.alert('List Disabled', 'Timeline listing has been disabled. The app now uses mock data only.')
+    return // Exit immediately - listing disabled
   }
 
 
@@ -779,82 +622,9 @@ export default function DevScreen() {
   }
 
   const handleImportTimeline = async () => {
-    try {
-      setLoading(true)
-      
-      // Fetch the latest timeline from the database
-      const { data, error } = await supabase
-        .schema('skedai')
-        .from('user_timeline')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1)
-      
-      if (error) {
-        throw error
-      }
-      
-      if (!data || data.length === 0) {
-        Alert.alert('No Timeline Found', 'No timeline data found in the database. Create a sample timeline first.')
-        return
-      }
-      
-      const timelineEntry = data[0]
-      const timelineData = timelineEntry.timeline_json as TimelineData
-      
-      // Clear existing tasks before importing new timeline
-      console.log('Clearing existing tasks before timeline import...')
-      await internalDB.clearAllTasks()
-      
-      // Import each task from the timeline into the local database
-      let importedCount = 0
-      const now = new Date()
-      
-      // Get the date from the first task to calculate offset
-      const firstTaskDate = timelineData.tasks.length > 0 
-        ? new Date(timelineData.tasks[0].start_time) 
-        : now
-      
-      // Calculate the time offset to adjust tasks to today
-      const originalDate = new Date(firstTaskDate)
-      originalDate.setHours(0, 0, 0, 0)
-      const todayDate = new Date(now)
-      todayDate.setHours(0, 0, 0, 0)
-      const dayOffset = todayDate.getTime() - originalDate.getTime()
-      
-      for (const timelineTask of timelineData.tasks) {
-        // Adjust the task times to today
-        const originalStart = new Date(timelineTask.start_time)
-        const originalEnd = new Date(timelineTask.end_time)
-        
-        const adjustedStart = new Date(originalStart.getTime() + dayOffset)
-        const adjustedEnd = new Date(originalEnd.getTime() + dayOffset)
-        
-        await internalDB.addTaskWithDuration(
-          timelineTask.name,
-          adjustedStart.toISOString(),
-          adjustedEnd.toISOString()
-        )
-        importedCount++
-      }
-      
-      await loadTasks()
-      await loadActions()
-      
-      // Force a small delay to ensure data is fully written before showing alert
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      Alert.alert(
-        'Timeline Imported!',
-        `Successfully imported ${importedCount} tasks from the timeline. Old tasks have been cleared and replaced with new timeline data.`,
-        [{ text: 'OK' }]
-      )
-    } catch (error: any) {
-      console.error('Error importing timeline:', error)
-      Alert.alert('Error', `Failed to import timeline: ${error.message}`)
-    } finally {
-      setLoading(false)
-    }
+    console.log('🚫 Manual timeline import disabled - using mock data only')
+    Alert.alert('Import Disabled', 'Timeline import has been disabled. The app now uses mock data only.')
+    return // Exit immediately - import disabled
   }
 
   return (

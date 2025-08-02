@@ -1,6 +1,6 @@
-import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View } from 'react-native';
+import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View, Dimensions } from 'react-native';
 import { Text } from '@/components/Themed';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import ThemedIcon from '@/components/ThemedIcon';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -22,7 +22,7 @@ export default function CalendarScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showProcessingIndicator, setShowProcessingIndicator] = useState(false);
   const [tasks, setTasks] = useState<InternalTask[]>([]);
-  const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
+  const [viewMode, setViewMode] = useState<'month' | 'week' | '3day'>('month');
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -30,6 +30,14 @@ export default function CalendarScreen() {
     weekStart.setDate(today.getDate() - dayOfWeek);
     return weekStart;
   });
+  
+  const [current3DayStart, setCurrent3DayStart] = useState(() => {
+    const today = new Date();
+    // Start 3-day view from today
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  });
+  
+  const threeDayScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -52,6 +60,21 @@ export default function CalendarScreen() {
     const interval = setInterval(loadTasks, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Scroll to middle period when 3-day view is active
+  useEffect(() => {
+    if (viewMode === '3day' && threeDayScrollRef.current) {
+      // Scroll to the middle period (index 2 out of 5 periods, which is period 0)
+      const screenWidth = Dimensions.get('window').width;
+      const middlePeriodIndex = 2;
+      setTimeout(() => {
+        threeDayScrollRef.current?.scrollTo({
+          x: middlePeriodIndex * screenWidth,
+          animated: false
+        });
+      }, 100);
+    }
+  }, [viewMode]);
 
   const loadTasks = async () => {
     try {
@@ -157,6 +180,16 @@ export default function CalendarScreen() {
     setCurrentWeekStart(newWeekStart);
   };
 
+  const navigate3Day = (direction: 'prev' | 'next') => {
+    const new3DayStart = new Date(current3DayStart);
+    if (direction === 'prev') {
+      new3DayStart.setDate(new3DayStart.getDate() - 3);
+    } else {
+      new3DayStart.setDate(new3DayStart.getDate() + 3);
+    }
+    setCurrent3DayStart(new3DayStart);
+  };
+
   const getWeekDays = () => {
     const days = [];
     for (let i = 0; i < 7; i++) {
@@ -167,8 +200,39 @@ export default function CalendarScreen() {
     return days;
   };
 
+  const get3Days = () => {
+    const days = [];
+    for (let i = 0; i < 3; i++) {
+      const day = new Date(current3DayStart);
+      day.setDate(current3DayStart.getDate() + i);
+      days.push(day);
+    }
+    return days;
+  };
+
+  const get3DayPeriods = () => {
+    const periods = [];
+    // Generate 5 periods (15 days total) for scrolling
+    for (let period = -2; period <= 2; period++) {
+      const periodDays = [];
+      for (let i = 0; i < 3; i++) {
+        const day = new Date(current3DayStart);
+        day.setDate(current3DayStart.getDate() + (period * 3) + i);
+        periodDays.push(day);
+      }
+      periods.push(periodDays);
+    }
+    return periods;
+  };
+
   const toggleViewMode = () => {
-    setViewMode(viewMode === 'month' ? 'week' : 'month');
+    if (viewMode === 'month') {
+      setViewMode('week');
+    } else if (viewMode === 'week') {
+      setViewMode('3day');
+    } else {
+      setViewMode('month');
+    }
   };
 
   const handleQuickAddTask = () => {
@@ -497,6 +561,164 @@ export default function CalendarScreen() {
     );
   };
 
+  const render3DayView = () => {
+    const threeDayPeriods = get3DayPeriods();
+    
+    return (
+      <ScrollView 
+        ref={threeDayScrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        style={styles.threeDayScrollView}
+        contentContainerStyle={styles.threeDayScrollContent}
+      >
+        {threeDayPeriods.map((threeDays, periodIndex) => (
+          <View key={periodIndex} style={styles.threeDayContainer}>
+            {threeDays.map((day, index) => {
+            const isToday = 
+              day.getDate() === new Date().getDate() && 
+              day.getMonth() === new Date().getMonth() && 
+              day.getFullYear() === new Date().getFullYear();
+
+            const isSelected = 
+              day.getDate() === selectedDate.getDate() && 
+              day.getMonth() === selectedDate.getMonth() && 
+              day.getFullYear() === selectedDate.getFullYear();
+
+            const hasTasks = hasTasksOnDate(day);
+            const dayTasks = getTasksForDate(day);
+            const isActualToday = 
+              day.getDate() === new Date().getDate() && 
+              day.getMonth() === new Date().getMonth() && 
+              day.getFullYear() === new Date().getFullYear();
+            const dayLabel = isActualToday ? 'Today' : '';
+
+            return (
+              <TouchableOpacity
+                key={index}
+                style={styles.threeDayCard}
+                onPress={() => setSelectedDate(new Date(day))}
+              >
+                <View 
+                  style={[
+                    styles.threeDayCardContent,
+                    {
+                      backgroundColor: isSelected 
+                        ? colors.tint 
+                        : (isToday 
+                          ? actualTheme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(74,144,226,0.1)'
+                          : actualTheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.08)'
+                        ),
+                      borderColor: isSelected ? colors.tint : (isToday ? colors.tint + '80' : 'transparent'),
+                      borderWidth: isSelected || isToday ? 2 : 1,
+                    }
+                  ]}
+                >
+                  {/* Day label - only show if not empty */}
+                  {dayLabel !== '' && (
+                    <Text style={[
+                      styles.threeDayLabel,
+                      { 
+                        color: isSelected ? '#fff' : colors.text,
+                        fontWeight: isToday ? '800' : '600' 
+                      }
+                    ]}>
+                      {dayLabel}
+                    </Text>
+                  )}
+                  
+                  {/* Date */}
+                  <Text style={[
+                    styles.threeDayDate,
+                    { 
+                      color: isSelected ? '#fff' : colors.text,
+                      fontWeight: isToday ? '700' : '500' 
+                    }
+                  ]}>
+                    {day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </Text>
+                  
+                  {/* Task list */}
+                  <View style={styles.threeDayTasks}>
+                    {dayTasks.slice(0, 4).map((task, taskIndex) => (
+                      <View 
+                        key={task.id}
+                        style={[
+                          styles.threeDayTaskItem,
+                          {
+                            backgroundColor: isSelected 
+                              ? 'rgba(255,255,255,0.2)' 
+                              : actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                          }
+                        ]}
+                      >
+                        <View 
+                          style={[
+                            styles.threeDayTaskDot,
+                            {
+                              backgroundColor: getPriorityColor(task, colors.tint),
+                            }
+                          ]} 
+                        />
+                        <Text 
+                          style={[
+                            styles.threeDayTaskText,
+                            { 
+                              color: isSelected ? '#fff' : colors.text,
+                              textDecorationLine: task.status === 'completed' ? 'line-through' : 'none',
+                              opacity: task.status === 'completed' ? 0.7 : 1,
+                            }
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {task.name}
+                        </Text>
+                        {task.start_time && (
+                          <Text 
+                            style={[
+                              styles.threeDayTaskTime,
+                              { color: isSelected ? 'rgba(255,255,255,0.8)' : colors.textSecondary }
+                            ]}
+                          >
+                            {new Date(task.start_time).toLocaleTimeString('en-US', { 
+                              hour: 'numeric', 
+                              minute: '2-digit',
+                              hour12: true 
+                            })}
+                          </Text>
+                        )}
+                      </View>
+                    ))}
+                    
+                    {dayTasks.length > 4 && (
+                      <Text style={[
+                        styles.threeDayMoreTasks, 
+                        { color: isSelected ? 'rgba(255,255,255,0.8)' : colors.textSecondary }
+                      ]}>
+                        +{dayTasks.length - 4} more tasks
+                      </Text>
+                    )}
+                    
+                    {dayTasks.length === 0 && (
+                      <Text style={[
+                        styles.threeDayNoTasks, 
+                        { color: isSelected ? 'rgba(255,255,255,0.7)' : colors.textSecondary }
+                      ]}>
+                        No tasks scheduled
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+            })}
+          </View>
+        ))}
+      </ScrollView>
+    );
+  };
+
   return (
     <ThemedGradient style={styles.container}>
       {/* Processing Indicator */}
@@ -514,77 +736,29 @@ export default function CalendarScreen() {
       )}
       
       <ScrollView style={styles.scrollView}>
-        <GlassMorphism intensity={actualTheme === 'dark' ? 'strong' : 'strong'} style={styles.header}>
-          <Text style={[styles.title, { color: colors.text }]}>Calendar</Text>
-          <Text style={[styles.subtitle, { color: colors.text }]}>
-            {selectedDate.toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}
-          </Text>
-        </GlassMorphism>
       
-      <GlassMorphism intensity={actualTheme === 'dark' ? 'strong' : 'strong'} style={styles.calendarContainer} borderRadius={20}>
-        <GlassMorphism intensity={actualTheme === 'dark' ? 'light' : 'medium'} style={styles.monthNavigation} borderRadius={12}>
-          <View style={styles.navigationHeader}>
-            <GlassMorphism 
-              intensity={actualTheme === 'dark' ? 'light' : 'strong'} 
-              style={styles.monthTitleContainer} 
-              borderRadius={8}
-            >
-              <Text style={[styles.monthText, { color: colors.text }]}>
-                {viewMode === 'month' 
-                  ? currentDate.toLocaleDateString('en-US', { 
-                      month: 'long', 
-                      year: 'numeric' 
-                    })
-                  : `${currentWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(currentWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                }
-              </Text>
-            </GlassMorphism>
-            <TouchableOpacity 
-              onPress={toggleViewMode}
-              style={[styles.viewToggle, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
-            >
-              <Text style={[styles.viewToggleText, { color: colors.text }]}>
-                {viewMode === 'month' ? 'Week' : 'Month'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.monthArrows}>
-            <TouchableOpacity 
-              onPress={() => viewMode === 'month' ? navigateMonth('prev') : navigateWeek('prev')} 
-              style={styles.arrowButton}
-            >
-              <Ionicons 
-                name="chevron-back" 
-                size={24} 
-                color={colors.text}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={() => viewMode === 'month' ? navigateMonth('next') : navigateWeek('next')} 
-              style={styles.arrowButton}
-            >
-              <Ionicons 
-                name="chevron-forward" 
-                size={24} 
-                color={colors.text}
-              />
-            </TouchableOpacity>
-          </View>
-        </GlassMorphism>
+      <View style={styles.calendarContainer}>
+        <TouchableOpacity 
+          onPress={toggleViewMode}
+          style={[styles.cleanViewToggle, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)' }]}
+        >
+          <Text style={[styles.viewToggleText, { color: colors.text }]}>
+            {viewMode === 'month' ? 'Week' : viewMode === 'week' ? '3 Day' : 'Month'}
+          </Text>
+        </TouchableOpacity>
 
-        {viewMode === 'month' ? (
-          <View style={styles.calendarGrid}>
-            {renderCalendarDays()}
-          </View>
-        ) : (
-          renderWeekView()
-        )}
-      </GlassMorphism>
+        <GlassMorphism intensity={actualTheme === 'dark' ? 'strong' : 'strong'} style={styles.calendarContent} borderRadius={20}>
+          {viewMode === 'month' ? (
+            <View style={styles.calendarGrid}>
+              {renderCalendarDays()}
+            </View>
+          ) : viewMode === 'week' ? (
+            renderWeekView()
+          ) : null}
+        </GlassMorphism>
+      </View>
+      
+      {viewMode === '3day' && render3DayView()}
 
       <GlassMorphism intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} style={styles.tasksSection} borderRadius={20}>
           <GlassMorphism 
@@ -834,11 +1008,14 @@ const styles = StyleSheet.create({
   calendarContainer: {
     margin: 20,
     marginBottom: 10,
+  },
+  calendarContent: {
     padding: 16,
+    marginTop: 16,
   },
   monthNavigation: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
     paddingHorizontal: 12,
@@ -856,6 +1033,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     marginLeft: 12,
+  },
+  singleViewToggle: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 16,
+  },
+  cleanViewToggle: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 20,
+    alignSelf: 'center',
   },
   viewToggleText: {
     fontSize: 14,
@@ -1259,5 +1447,82 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     marginTop: 4,
+  },
+  // 3-Day View Styles
+  threeDayScrollView: {
+    flex: 1,
+  },
+  threeDayScrollContent: {
+    // Content will size automatically
+  },
+  threeDayContainer: {
+    flexDirection: 'row',
+    width: Dimensions.get('window').width,
+    gap: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  threeDayCard: {
+    flex: 1,
+    minHeight: 350,
+  },
+  threeDayCardContent: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+  },
+  threeDayLabel: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  threeDayDate: {
+    fontSize: 14,
+    marginBottom: 16,
+    textAlign: 'center',
+    opacity: 0.8,
+  },
+  threeDayTasks: {
+    flex: 1,
+    gap: 8,
+  },
+  threeDayTaskItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 8,
+    gap: 8,
+  },
+  threeDayTaskDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    flexShrink: 0,
+  },
+  threeDayTaskText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
+  threeDayTaskTime: {
+    fontSize: 11,
+    fontWeight: '600',
+    opacity: 0.8,
+  },
+  threeDayMoreTasks: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 8,
+    opacity: 0.7,
+  },
+  threeDayNoTasks: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 20,
+    fontStyle: 'italic',
+    opacity: 0.6,
   },
 });
