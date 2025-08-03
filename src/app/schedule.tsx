@@ -26,7 +26,7 @@ import * as Speech from 'expo-speech'
 import { internalDB, InternalTask } from '@/lib/internal-db'
 import { supabase } from '@/lib/supabase'
 import { generateSimpleMockTasks } from '@/lib/simple-mock-data'
-import { timelineWithGym, importTimelineToTasks, addShowerTasksToSchedule, addBusinessTripToWeekend } from '@/lib/demo-timelines'
+import { timelineWithGym, pureLifestyleTimeline, importTimelineToTasks, importRecurringTimelineToTasks, addShowerTasksToSchedule, addBusinessTripToWeekend } from '@/lib/demo-timelines'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { GlassMorphism } from '@/components/GlassMorphism'
 import { ThemedGradient } from '@/components/ThemedGradient'
@@ -1106,8 +1106,8 @@ export default function ScheduleScreen() {
     try {
       // console.log('🔍 Starting prompt submission process...')
       
-      // Wait 1.5 seconds to make it feel more realistic
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      // Wait 2 seconds to make it feel more realistic
+      await new Promise(resolve => setTimeout(resolve, 2000))
       
       // Process the prompt text
       const promptText = taskInputText.trim().toLowerCase()
@@ -1387,6 +1387,19 @@ export default function ScheduleScreen() {
         return
       }
       
+      // Check if this is the complete lifestyle schedule prompt
+      const isCompleteLifestylePrompt = (
+        promptText.includes('8 hours sleep') || promptText.includes('8 hour sleep')
+      ) && (
+        promptText.includes('morning') && promptText.includes('evening') && promptText.includes('routine')
+      ) && (
+        promptText.includes('3 meals')
+      ) && (
+        promptText.includes('gym') && promptText.includes('5 times') && promptText.includes('week')
+      ) && (
+        promptText.includes('shower') && promptText.includes('everyday')
+      )
+      
       // Check if this is a gym-related prompt
       const isGymPrompt = promptText.includes('gym') || 
                          promptText.includes('workout') || 
@@ -1400,6 +1413,60 @@ export default function ScheduleScreen() {
       const isBusinessTripPrompt = (promptText.includes('business trip') || 
                                    promptText.includes('work') && promptText.includes('weekend')) &&
                                    (promptText.includes('run') || promptText.includes('running'))
+      
+      if (isCompleteLifestylePrompt) {
+        // Handle complete lifestyle schedule prompt
+        // console.log('🌟 Complete lifestyle prompt detected! Implementing comprehensive schedule...')
+        
+        // Clear existing tasks
+        await internalDB.clearAllTasks()
+        
+        // Import the pure lifestyle timeline which includes ONLY your requirements for multiple weeks
+        const lifestyleTasks = importRecurringTimelineToTasks(pureLifestyleTimeline, 8, false) // 8 weeks = 2 months
+        
+        // Save all lifestyle tasks
+        let importedCount = 0
+        for (const task of lifestyleTasks) {
+          await internalDB.saveTask({
+            id: task.id,
+            name: task.name,
+            start_time: task.start_time,
+            end_time: task.end_time,
+            duration: (new Date(task.end_time).getTime() - new Date(task.start_time).getTime()) / 1000,
+            status: task.status as any,
+            priority: task.priority,
+            created_at: task.created_at,
+            updated_at: task.updated_at,
+            completed_at: task.completed_at
+          })
+          importedCount++
+        }
+        
+        // Reload tasks
+        await loadInternalTasks()
+        
+        // Show success message
+        setShowProcessingIndicator(false)
+        Alert.alert(
+          'Pure Lifestyle Schedule Created!',
+          `Your clean lifestyle-focused recurring schedule has been created with:\n\n` +
+          `✅ 8 hours sleep nightly\n` +
+          `✅ Morning & evening routines\n` +
+          `✅ 3 balanced meals daily\n` +
+          `✅ Gym 5x per week (mornings)\n` +
+          `✅ Daily showers after workouts\n` +
+          `✅ Personal time & leisure activities\n\n` +
+          `${importedCount} lifestyle tasks scheduled for the next 8 weeks!\n\n` +
+          `NO work meetings or corporate tasks included!`,
+          [{ text: 'Perfect!' }]
+        )
+        
+        // Reset modal state
+        setTaskInputText('')
+        setShowTaskInput(false)
+        setIsProcessing(false)
+        return
+      }
       
       if (isBusinessTripPrompt) {
         // Handle business trip with running prompt

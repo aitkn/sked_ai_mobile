@@ -136,74 +136,250 @@ export function importTimelineToTasks(
   return tasks
 }
 
-// Timeline WITH gym activities - 5 times a week in the afternoon
+// Timeline WITH your requirements: 8 hours sleep, morning/evening routines, 3 meals, gym 5x/week (morning), daily shower after gym
 export const timelineWithGym: DayTimeline = {
   Monday: [
-    { time: "8:30", duration: 30, name: "Morning Coffee & Email Review", priority: "low" },
+    { time: "6:00", duration: 30, name: "Morning Routine", priority: "high" },
+    { time: "6:30", duration: 60, name: "Gym Session - Upper Body", priority: "high" },
+    { time: "7:30", duration: 30, name: "Post-Workout Shower", priority: "medium" },
+    { time: "8:00", duration: 30, name: "Breakfast", priority: "medium" },
     { time: "9:00", duration: 30, name: "Team Standup", priority: "high" },
     { time: "10:00", duration: 90, name: "Sprint Planning Meeting", priority: "high" },
-    { time: "12:00", duration: 45, name: "Quick Lunch", priority: "low" }, // Shortened lunch
-    { time: "13:00", duration: 60, name: "Design Review Session", priority: "medium" },
-    { time: "14:30", duration: 60, name: "Gym Session - Upper Body", priority: "high" }, // Added gym
-    { time: "15:45", duration: 90, name: "Feature Development", priority: "high" }, // Shortened
-    { time: "18:00", duration: 45, name: "Grocery Shopping", priority: "medium" }
+    { time: "12:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "13:30", duration: 180, name: "Feature Development", priority: "high" },
+    { time: "17:00", duration: 60, name: "Code Review Session", priority: "medium" },
+    { time: "18:30", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "20:00", duration: 60, name: "Grocery Shopping", priority: "low" },
+    { time: "21:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
   ],
   Tuesday: [
-    { time: "8:00", duration: 45, name: "Email & Slack Catchup", priority: "low" },
+    { time: "6:00", duration: 30, name: "Morning Routine", priority: "high" },
+    { time: "6:30", duration: 60, name: "Gym Session - Lower Body", priority: "high" },
+    { time: "7:30", duration: 30, name: "Post-Workout Shower", priority: "medium" },
+    { time: "8:00", duration: 30, name: "Breakfast", priority: "medium" },
     { time: "9:00", duration: 30, name: "1:1 with Team Lead", priority: "high" },
     { time: "10:00", duration: 120, name: "Client Presentation Prep", priority: "high" },
-    { time: "12:30", duration: 45, name: "Quick Lunch", priority: "low" },
-    { time: "13:30", duration: 90, name: "API Development Sprint", priority: "high" }, // Shortened
-    { time: "15:15", duration: 60, name: "Gym Session - Cardio", priority: "high" }, // Added gym
-    { time: "16:30", duration: 60, name: "Code Review", priority: "medium" }, // Added time for work
-    { time: "17:45", duration: 60, name: "Dentist Appointment", priority: "medium" }, // Moved later
-    { time: "19:00", duration: 90, name: "Dinner with Parents", priority: "medium" }
+    { time: "12:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "13:30", duration: 180, name: "API Development Sprint", priority: "high" },
+    { time: "17:00", duration: 60, name: "Dentist Appointment", priority: "medium" },
+    { time: "18:30", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "20:00", duration: 90, name: "Family Time", priority: "medium" },
+    { time: "21:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
   ],
   Wednesday: [
-    { time: "8:30", duration: 30, name: "Morning Planning", priority: "medium" },
+    { time: "6:00", duration: 30, name: "Morning Routine", priority: "high" },
+    { time: "6:30", duration: 60, name: "Gym Session - Cardio", priority: "high" },
+    { time: "7:30", duration: 30, name: "Post-Workout Shower", priority: "medium" },
+    { time: "8:00", duration: 30, name: "Breakfast", priority: "medium" },
     { time: "9:00", duration: 30, name: "Team Standup", priority: "high" },
-    { time: "9:30", duration: 120, name: "Bug Fixing Session", priority: "high" },
-    { time: "12:00", duration: 45, name: "Team Lunch", priority: "low" }, // Shortened
-    { time: "13:00", duration: 60, name: "Product Demo to Stakeholders", priority: "high" },
-    { time: "14:30", duration: 60, name: "Gym Session - Lower Body", priority: "high" }, // Added gym
-    { time: "15:45", duration: 75, name: "Code Review & Refactoring", priority: "medium" }, // Shortened
-    { time: "17:30", duration: 120, name: "Team Happy Hour", priority: "low" }
+    { time: "10:00", duration: 120, name: "Bug Fixing Session", priority: "high" },
+    { time: "12:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "13:30", duration: 90, name: "Product Demo to Stakeholders", priority: "high" },
+    { time: "15:30", duration: 90, name: "Code Review & Refactoring", priority: "medium" },
+    { time: "17:30", duration: 120, name: "Team Happy Hour", priority: "low" },
+    { time: "19:30", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "21:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
   ],
   Thursday: [
-    { time: "8:00", duration: 60, name: "Deep Work - No Meetings", priority: "high" },
+    { time: "6:00", duration: 30, name: "Morning Routine", priority: "high" },
+    { time: "6:30", duration: 60, name: "Gym Session - Full Body", priority: "high" },
+    { time: "7:30", duration: 30, name: "Post-Workout Shower", priority: "medium" },
+    { time: "8:00", duration: 30, name: "Breakfast", priority: "medium" },
     { time: "9:00", duration: 180, name: "Quarterly Planning Workshop", priority: "high" },
-    { time: "12:00", duration: 45, name: "Lunch & Learn: New Tech Stack", priority: "medium" }, // Shortened
-    { time: "13:00", duration: 60, name: "Performance Review with Manager", priority: "high" }, // Moved earlier
-    { time: "14:30", duration: 60, name: "Gym Session - Full Body", priority: "high" }, // Added gym
-    { time: "15:45", duration: 90, name: "Feature Development", priority: "high" }, // Shortened
-    { time: "17:30", duration: 30, name: "Pick up Dry Cleaning", priority: "low" }, // Moved earlier
-    { time: "19:00", duration: 90, name: "Book Club Meeting", priority: "low" }
+    { time: "12:00", duration: 60, name: "Lunch & Learn: New Tech Stack", priority: "medium" },
+    { time: "13:30", duration: 90, name: "Performance Review with Manager", priority: "high" },
+    { time: "15:30", duration: 120, name: "Feature Development", priority: "high" },
+    { time: "18:00", duration: 30, name: "Pick up Dry Cleaning", priority: "low" },
+    { time: "19:00", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "20:30", duration: 90, name: "Book Club Meeting", priority: "low" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
   ],
   Friday: [
-    { time: "8:00", duration: 30, name: "Coffee Run & Team Treats", priority: "low" },
+    { time: "6:00", duration: 30, name: "Morning Routine", priority: "high" },
+    { time: "6:30", duration: 60, name: "Gym Session - Yoga/Stretching", priority: "high" },
+    { time: "7:30", duration: 30, name: "Post-Workout Shower", priority: "medium" },
+    { time: "8:00", duration: 30, name: "Breakfast", priority: "medium" },
     { time: "9:00", duration: 30, name: "Team Standup", priority: "high" },
     { time: "10:00", duration: 60, name: "Sprint Retrospective", priority: "high" },
-    { time: "11:30", duration: 60, name: "Documentation & Cleanup", priority: "medium" }, // Shortened
-    { time: "12:45", duration: 45, name: "Quick Lunch", priority: "low" }, // Shortened
-    { time: "13:45", duration: 60, name: "Week Review & Next Week Planning", priority: "medium" }, // Moved earlier
-    { time: "15:00", duration: 60, name: "Gym Session - Yoga/Stretching", priority: "high" }, // Added gym
+    { time: "11:30", duration: 90, name: "Documentation & Cleanup", priority: "medium" },
+    { time: "13:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "14:30", duration: 90, name: "Week Review & Next Week Planning", priority: "medium" },
     { time: "16:15", duration: 30, name: "Deploy to Staging", priority: "high" },
-    { time: "18:00", duration: 180, name: "Happy Hour with Friends", priority: "low" }
+    { time: "18:00", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "19:30", duration: 180, name: "Happy Hour with Friends", priority: "low" },
+    { time: "22:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "23:00", duration: 420, name: "Sleep (7 hours - weekend prep)", priority: "high" }
   ],
   Saturday: [
+    { time: "6:00", duration: 480, name: "Sleep (8 hours on weekend)", priority: "high" },
+    { time: "8:00", duration: 30, name: "Morning Routine", priority: "medium" },
+    { time: "8:30", duration: 30, name: "Morning Shower", priority: "medium" },
+    { time: "9:00", duration: 30, name: "Breakfast", priority: "medium" },
     { time: "10:00", duration: 90, name: "Weekend Brunch at Cafe", priority: "low" },
     { time: "11:30", duration: 60, name: "Farmers Market", priority: "low" },
-    { time: "14:00", duration: 120, name: "Home Improvement Project", priority: "medium" },
+    { time: "13:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "14:30", duration: 120, name: "Home Improvement Project", priority: "medium" },
     { time: "17:00", duration: 60, name: "Meal Prep for Week", priority: "medium" },
-    { time: "20:00", duration: 150, name: "Movie Night with Friends", priority: "low" }
+    { time: "19:00", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "20:30", duration: 150, name: "Movie Night with Friends", priority: "low" },
+    { time: "23:00", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "23:30", duration: 450, name: "Sleep (7.5 hours)", priority: "high" }
   ],
   Sunday: [
-    { time: "9:00", duration: 60, name: "Sleep In & Slow Morning", priority: "low" },
-    { time: "11:00", duration: 120, name: "Visit Local Museum", priority: "low" },
+    { time: "7:00", duration: 60, name: "Sleep In & Slow Morning", priority: "low" },
+    { time: "8:00", duration: 30, name: "Morning Routine", priority: "medium" },
+    { time: "8:30", duration: 30, name: "Morning Shower", priority: "medium" },
+    { time: "9:00", duration: 30, name: "Breakfast", priority: "medium" },
+    { time: "10:00", duration: 120, name: "Visit Local Museum", priority: "low" },
+    { time: "12:30", duration: 60, name: "Lunch", priority: "medium" },
     { time: "14:00", duration: 120, name: "Meal Prep & Kitchen Cleanup", priority: "medium" },
     { time: "16:30", duration: 90, name: "Reading & Relaxation", priority: "low" },
-    { time: "18:00", duration: 120, name: "Family Dinner", priority: "medium" }
+    { time: "18:00", duration: 120, name: "Family Dinner", priority: "medium" },
+    { time: "20:30", duration: 90, name: "Sunday Planning & Prep", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
   ]
+}
+
+// Minimal timeline - ONLY the 5 core essentials you requested
+export const pureLifestyleTimeline: DayTimeline = {
+  Monday: [
+    { time: "6:00", duration: 30, name: "Morning Routine", priority: "high" },
+    { time: "6:30", duration: 60, name: "Gym Session - Upper Body", priority: "high" },
+    { time: "7:30", duration: 30, name: "Post-Workout Shower", priority: "medium" },
+    { time: "8:00", duration: 30, name: "Breakfast", priority: "medium" },
+    { time: "12:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "18:30", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "21:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
+  ],
+  Tuesday: [
+    { time: "6:00", duration: 30, name: "Morning Routine", priority: "high" },
+    { time: "6:30", duration: 60, name: "Gym Session - Lower Body", priority: "high" },
+    { time: "7:30", duration: 30, name: "Post-Workout Shower", priority: "medium" },
+    { time: "8:00", duration: 30, name: "Breakfast", priority: "medium" },
+    { time: "12:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "18:30", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "21:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
+  ],
+  Wednesday: [
+    { time: "6:00", duration: 30, name: "Morning Routine", priority: "high" },
+    { time: "6:30", duration: 60, name: "Gym Session - Cardio", priority: "high" },
+    { time: "7:30", duration: 30, name: "Post-Workout Shower", priority: "medium" },
+    { time: "8:00", duration: 30, name: "Breakfast", priority: "medium" },
+    { time: "12:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "18:30", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "21:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
+  ],
+  Thursday: [
+    { time: "6:00", duration: 30, name: "Morning Routine", priority: "high" },
+    { time: "6:30", duration: 60, name: "Gym Session - Full Body", priority: "high" },
+    { time: "7:30", duration: 30, name: "Post-Workout Shower", priority: "medium" },
+    { time: "8:00", duration: 30, name: "Breakfast", priority: "medium" },
+    { time: "12:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "18:30", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "21:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
+  ],
+  Friday: [
+    { time: "6:00", duration: 30, name: "Morning Routine", priority: "high" },
+    { time: "6:30", duration: 60, name: "Gym Session - Yoga/Stretching", priority: "high" },
+    { time: "7:30", duration: 30, name: "Post-Workout Shower", priority: "medium" },
+    { time: "8:00", duration: 30, name: "Breakfast", priority: "medium" },
+    { time: "12:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "18:30", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "21:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
+  ],
+  Saturday: [
+    { time: "8:00", duration: 30, name: "Morning Routine", priority: "medium" },
+    { time: "8:30", duration: 30, name: "Morning Shower", priority: "medium" },
+    { time: "9:00", duration: 60, name: "Breakfast", priority: "medium" },
+    { time: "13:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "18:00", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "21:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
+  ],
+  Sunday: [
+    { time: "8:00", duration: 30, name: "Morning Routine", priority: "medium" },
+    { time: "8:30", duration: 30, name: "Morning Shower", priority: "medium" },
+    { time: "9:00", duration: 60, name: "Breakfast", priority: "medium" },
+    { time: "13:00", duration: 60, name: "Lunch", priority: "medium" },
+    { time: "18:00", duration: 60, name: "Dinner", priority: "medium" },
+    { time: "21:30", duration: 30, name: "Evening Routine", priority: "medium" },
+    { time: "22:00", duration: 480, name: "Sleep (8 hours)", priority: "high" }
+  ]
+}
+
+// Function to import timeline into tasks for multiple weeks (recurring schedule)
+export function importRecurringTimelineToTasks(
+  timeline: DayTimeline,
+  numberOfWeeks: number = 4,
+  startFromToday: boolean = true
+): Task[] {
+  const tasks: Task[] = []
+  const now = new Date()
+  
+  // Calculate the start of the week - for demo, always start from next Monday
+  const startDate = new Date(now)
+  const day = startDate.getDay()
+  const daysUntilNextMonday = day === 0 ? 1 : 8 - day
+  startDate.setDate(startDate.getDate() + daysUntilNextMonday)
+  startDate.setHours(0, 0, 0, 0)
+
+  const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  
+  // Generate tasks for multiple weeks
+  for (let weekNumber = 0; weekNumber < numberOfWeeks; weekNumber++) {
+    const weekStartDate = new Date(startDate)
+    weekStartDate.setDate(startDate.getDate() + (weekNumber * 7))
+    
+    dayOrder.forEach((dayName, dayIndex) => {
+      const dayEntries = timeline[dayName] || []
+      const currentDate = new Date(weekStartDate)
+      currentDate.setDate(weekStartDate.getDate() + dayIndex)
+      
+      dayEntries.forEach((entry, entryIndex) => {
+        const [hours, minutes] = entry.time.split(':').map(Number)
+        const startTime = new Date(currentDate)
+        startTime.setHours(hours, minutes, 0, 0)
+        
+        const endTime = new Date(startTime.getTime() + entry.duration * 60 * 1000)
+        
+        // All tasks are pending since they're for future weeks
+        let status: 'pending' | 'completed' | 'in_progress' = 'pending'
+        if (entry.status) {
+          status = entry.status
+        }
+        
+        const taskId = `demo-week${weekNumber + 1}-${dayName.toLowerCase()}-${Date.now()}-${entryIndex}`
+        
+        const task: Task = {
+          id: taskId,
+          local_id: taskId,
+          user_id: 'demo_user',
+          name: entry.name,
+          status,
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString(),
+          priority: entry.priority || 'medium',
+          created_at: now.toISOString(),
+          updated_at: now.toISOString(),
+          deleted_at: null,
+          completed_at: status === 'completed' ? endTime.toISOString() : null,
+          sync_status: 'synced' as const,
+        }
+        
+        tasks.push(task)
+      })
+    })
+  }
+  
+  return tasks
 }
 
 // Helper function to clear existing demo tasks
