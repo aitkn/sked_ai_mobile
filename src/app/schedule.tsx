@@ -1796,17 +1796,16 @@ export default function ScheduleScreen() {
         // Show success message
         setShowProcessingIndicator(false)
         Alert.alert(
-          'Pure Lifestyle Schedule Created!',
-          `Your clean lifestyle-focused recurring schedule has been created with:\n\n` +
-          `✅ 8 hours sleep nightly\n` +
-          `✅ Morning & evening routines\n` +
-          `✅ 3 balanced meals daily\n` +
-          `✅ Gym 5x per week (mornings)\n` +
-          `✅ Daily showers after workouts\n` +
-          `✅ Personal time & leisure activities\n\n` +
-          `${importedCount} lifestyle tasks scheduled for the next 8 weeks!\n\n` +
-          `NO work meetings or corporate tasks included!`,
-          [{ text: 'Perfect!' }]
+          'Schedule Generated Successfully',
+          `Your personalized schedule has been created based on your requirements.\n\n` +
+          `Schedule includes:\n` +
+          `• 8 hours sleep nightly\n` +
+          `• Morning and evening routines\n` +
+          `• 3 balanced meals daily\n` +
+          `• Gym sessions 5 times per week\n` +
+          `• Daily shower times\n\n` +
+          `${importedCount} tasks have been scheduled for the next 8 weeks.`,
+          [{ text: 'Got it' }]
         )
         
         // Reset modal state
