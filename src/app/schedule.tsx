@@ -1746,8 +1746,6 @@ export default function ScheduleScreen() {
         promptText.includes('3 meals')
       ) && (
         promptText.includes('gym') && promptText.includes('5 times') && promptText.includes('week')
-      ) && (
-        promptText.includes('shower') && promptText.includes('everyday')
       )
       
       // Check if this is a gym-related prompt
