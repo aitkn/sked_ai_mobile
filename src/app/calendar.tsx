@@ -64,15 +64,16 @@ export default function CalendarScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // Scroll to middle period when 3-day view is active
+  // Scroll to today when 3-day view is active
   useEffect(() => {
     if (viewMode === '3day' && threeDayScrollRef.current) {
-      // Scroll to the middle period (index 2 out of 5 periods, which is period 0)
+      // Scroll to today (index 3 out of 9 days, where today starts at position 0)
       const screenWidth = Dimensions.get('window').width;
-      const middlePeriodIndex = 2;
+      const dayWidth = screenWidth / 3;
+      const todayIndex = 3; // Today is at index 3 in our days array
       setTimeout(() => {
         threeDayScrollRef.current?.scrollTo({
-          x: middlePeriodIndex * screenWidth,
+          x: todayIndex * dayWidth,
           animated: false
         });
       }, 100);
@@ -256,19 +257,16 @@ export default function CalendarScreen() {
     return days;
   };
 
-  const get3DayPeriods = () => {
-    const periods = [];
-    // Generate 5 periods (15 days total) for scrolling
-    for (let period = -2; period <= 2; period++) {
-      const periodDays = [];
-      for (let i = 0; i < 3; i++) {
-        const day = new Date(current3DayStart);
-        day.setDate(current3DayStart.getDate() + (period * 3) + i);
-        periodDays.push(day);
-      }
-      periods.push(periodDays);
+  const getDaysForSliding = () => {
+    const days = [];
+    // Generate a continuous strip of days for smooth scrolling
+    // Create 9 days total (3 before today, today, 5 after) for good scrolling range
+    for (let i = -3; i <= 5; i++) {
+      const day = new Date(current3DayStart);
+      day.setDate(current3DayStart.getDate() + i);
+      days.push(day);
     }
-    return periods;
+    return days;
   };
 
   const toggleViewMode = () => {
@@ -773,112 +771,151 @@ export default function CalendarScreen() {
   };
 
   const render3DayView = () => {
-    const threeDayPeriods = get3DayPeriods();
+    const days = getDaysForSliding();
+    const screenWidth = Dimensions.get('window').width;
+    const dayWidth = screenWidth / 3;
     
+    const handleScrollEnd = (event: any) => {
+      const scrollX = event.nativeEvent.contentOffset.x;
+      const currentDayIndex = Math.round(scrollX / dayWidth);
+      
+      // Snap to the nearest day boundary
+      threeDayScrollRef.current?.scrollTo({
+        x: currentDayIndex * dayWidth,
+        animated: true
+      });
+    };
+
     return (
       <ScrollView 
         ref={threeDayScrollRef}
         horizontal
-        pagingEnabled
+        pagingEnabled={false}
         showsHorizontalScrollIndicator={false}
         style={styles.threeDayScrollView}
         contentContainerStyle={styles.threeDayScrollContent}
+        onMomentumScrollEnd={handleScrollEnd}
+        snapToInterval={dayWidth}
+        decelerationRate="fast"
       >
-        {threeDayPeriods.map((threeDays, periodIndex) => (
-          <View key={periodIndex} style={styles.threeDayContainer}>
-            {threeDays.map((day, index) => {
-            const isToday = 
-              day.getDate() === new Date().getDate() && 
-              day.getMonth() === new Date().getMonth() && 
-              day.getFullYear() === new Date().getFullYear();
+        {days.map((day, dayIndex) => {
+          const isToday = 
+            day.getDate() === new Date().getDate() && 
+            day.getMonth() === new Date().getMonth() && 
+            day.getFullYear() === new Date().getFullYear();
 
-            const isSelected = 
-              day.getDate() === selectedDate.getDate() &&
-              day.getMonth() === selectedDate.getMonth() &&
-              day.getFullYear() === selectedDate.getFullYear();
-              
-            const hasTasks = hasTasksOnDate(day);
-            const dayTasks = getTasksForDate(day);
-            
-            return (
-              <TouchableOpacity
-                key={index}
+          const isSelected = 
+            day.getDate() === selectedDate.getDate() && 
+            day.getMonth() === selectedDate.getMonth() && 
+            day.getFullYear() === selectedDate.getFullYear();
+
+          const hasTasks = hasTasksOnDate(day);
+          const dayTasks = getTasksForDate(day);
+          const isActualToday = 
+            day.getDate() === new Date().getDate() && 
+            day.getMonth() === new Date().getMonth() && 
+            day.getFullYear() === new Date().getFullYear();
+          const dayLabel = isActualToday ? 'Today' : '';
+
+          return (
+            <View
+              key={dayIndex}
+              style={[styles.slidingDayCard, { width: dayWidth }]}
+            >
+              <View 
                 style={[
-                  styles.threeDayCell,
-                  isToday && styles.todayCell,
-                  isSelected && styles.selectedCell,
-                  isSelected && { backgroundColor: colors.tint },
+                  styles.threeDayCardContent,
+                  {
+                    backgroundColor: isToday 
+                      ? actualTheme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(74,144,226,0.1)'
+                      : actualTheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.08)',
+                    borderColor: isToday ? colors.tint + '80' : 'transparent',
+                    borderWidth: isToday ? 2 : 1,
+                  }
                 ]}
-                onPress={() => setSelectedDate(day)}
               >
-                <View style={styles.threeDayContent}>
-                  <Text style={[
-                    styles.threeDayDayLabel,
-                    { color: isSelected ? '#fff' : colors.textSecondary }
-                  ]}>
-                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
-                  </Text>
+                
+                {/* Date */}
+                <Text style={[
+                  styles.threeDayDate,
+                  { 
+                    color: colors.text,
+                    fontWeight: isToday ? '700' : '500' 
+                  }
+                ]}>
+                  {day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+                
+                {/* Time Grid */}
+                <View style={styles.timeGrid}>
+                  {/* Hour markers */}
+                  <View style={styles.hourMarkers}>
+                    {Array.from({ length: 24 }, (_, hour) => (
+                      <View key={hour} style={styles.hourMarker}>
+                        <Text style={[
+                          styles.hourText,
+                          { color: colors.textSecondary }
+                        ]}>
+                          {hour.toString().padStart(2, '0')}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                   
-                  <Text style={[
-                    styles.threeDayNumber,
-                    isToday && { color: colors.tint },
-                    isSelected && { color: '#fff' },
-                    { color: isSelected ? '#fff' : (isToday ? colors.tint : colors.text) }
-                  ]}>
-                    {day.getDate()}
-                  </Text>
-                  
-                  {day.getDate() === 1 && (
-                    <Text style={[
-                      styles.threeDayMonthLabel,
-                      { color: isSelected ? '#fff' : colors.textSecondary }
-                    ]}>
-                      {day.toLocaleDateString('en-US', { month: 'short' })}
-                    </Text>
-                  )}
-                  
-                  {/* Task list for 3-day view */}
-                  {hasTasks && (
-                    <View style={styles.threeDayTasks}>
-                      {dayTasks.slice(0, 3).map((task, taskIndex) => (
+                  {/* Task blocks */}
+                  <View style={styles.taskBlocks}>
+                    {dayTasks.map((task, taskIndex) => {
+                      const startTime = new Date(task.start_time);
+                      const endTime = new Date(task.end_time);
+                      const startHour = startTime.getHours() + startTime.getMinutes() / 60;
+                      const duration = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60); // Duration in hours
+                      const hourHeight = 30; // Height per hour in pixels
+                      
+                      return (
                         <View 
-                          key={task.id} 
+                          key={task.id}
                           style={[
-                            styles.threeDayTaskItem,
+                            styles.taskBlock,
                             {
-                              backgroundColor: isSelected && task.status === 'pending' ? 
-                                             'rgba(255,255,255,0.3)' : 
-                                             getPriorityColor(task, colors.tint) + '30',
+                              top: startHour * hourHeight,
+                              height: Math.max(duration * hourHeight, 20), // Minimum height of 20px
+                              backgroundColor: getPriorityColor(task, colors.tint),
+                              opacity: task.status === 'completed' ? 0.6 : 0.9,
                             }
                           ]}
                         >
                           <Text 
                             style={[
-                              styles.threeDayTaskText,
-                              { color: isSelected ? '#fff' : colors.text }
+                              styles.taskBlockText,
+                              { 
+                                color: '#fff',
+                                textDecorationLine: task.status === 'completed' ? 'line-through' : 'none',
+                              }
                             ]}
-                            numberOfLines={1}
+                            numberOfLines={duration > 1 ? 4 : 2}
                           >
                             {task.name}
                           </Text>
                         </View>
-                      ))}
-                      {dayTasks.length > 3 && (
+                      );
+                    })}
+                    
+                    {dayTasks.length === 0 && (
+                      <View style={styles.noTasksGrid}>
                         <Text style={[
-                          styles.threeDayMoreTasks,
-                          { color: isSelected ? '#fff' : colors.textSecondary }
+                          styles.threeDayNoTasks, 
+                          { color: colors.textSecondary }
                         ]}>
-                          +{dayTasks.length - 3} more
+                          No tasks scheduled
                         </Text>
-                      )}
-                    </View>
-                  )}
+                      </View>
+                    )}
+                  </View>
                 </View>
-              </TouchableOpacity>
-            );
-          })}
-          </View>
-        ))}
+              </View>
+            </View>
+          );
+        })}
       </ScrollView>
     );
   };
@@ -992,7 +1029,8 @@ export default function CalendarScreen() {
       
       {viewMode === '3day' && render3DayView()}
 
-      <GlassMorphism intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} style={styles.tasksSection} borderRadius={20}>
+      {viewMode !== '3day' && (
+        <GlassMorphism intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} style={styles.tasksSection} borderRadius={20}>
           <GlassMorphism 
             intensity={actualTheme === 'dark' ? 'medium' : 'extra-strong'} 
             style={styles.tasksTitleContainer} 
@@ -1056,6 +1094,7 @@ export default function CalendarScreen() {
             })()}
           </View>
         </GlassMorphism>
+      )}
       </ScrollView>
 
       {/* Task Input Modal */}
@@ -1750,5 +1789,132 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     marginTop: 4,
+  },
+  // Single Day View Styles
+  singleDayContainer: {
+    width: Dimensions.get('window').width,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  singleDayCard: {
+    flex: 1,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    minHeight: 400,
+  },
+  singleDayLabel: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  singleDayDate: {
+    fontSize: 16,
+    marginBottom: 24,
+    textAlign: 'center',
+    opacity: 0.8,
+  },
+  singleDayTasks: {
+    flex: 1,
+    gap: 12,
+  },
+  singleDayTaskItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    gap: 12,
+  },
+  singleDayTaskDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    flexShrink: 0,
+  },
+  singleDayTaskText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  singleDayTaskTime: {
+    fontSize: 12,
+    fontWeight: '600',
+    opacity: 0.8,
+  },
+  singleDayMoreTasks: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 12,
+    opacity: 0.7,
+  },
+  singleDayNoTasks: {
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 40,
+    fontStyle: 'italic',
+    opacity: 0.6,
+  },
+  // Sliding day card style
+  slidingDayCard: {
+    minHeight: 350,
+    paddingHorizontal: 4,
+    paddingVertical: 10,
+  },
+  // Time grid styles
+  timeGrid: {
+    flex: 1,
+    flexDirection: 'row',
+    marginTop: 16,
+  },
+  hourMarkers: {
+    width: 24,
+    paddingRight: 4,
+  },
+  hourMarker: {
+    height: 30,
+    justifyContent: 'center',
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  hourText: {
+    fontSize: 8,
+    fontWeight: '500',
+    textAlign: 'right',
+  },
+  taskBlocks: {
+    flex: 1,
+    position: 'relative',
+    marginLeft: 4,
+    height: 24 * 30, // 24 hours * 30px per hour
+  },
+  taskBlock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    borderRadius: 4,
+    padding: 4,
+    marginRight: 2,
+    borderLeftWidth: 3,
+    borderLeftColor: '#fff',
+  },
+  taskBlockText: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  taskBlockTime: {
+    fontSize: 8,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.9)',
+    lineHeight: 10,
+  },
+  noTasksGrid: {
+    position: 'absolute',
+    top: 100,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
   },
 });
