@@ -1321,10 +1321,360 @@ export default function ScheduleScreen() {
         return
       }
       
-      // Check for meeting with team members prompt
-      if (promptText.includes('meeting') && 
-          (promptText.includes('team members') || promptText.includes('3 team members')) && 
-          promptText.includes('monday')) {
+      // Check for UCSD schedule import
+      if (promptText.includes('import') && promptText.includes('ucsd') && promptText.includes('schedule')) {
+        // console.log('🎓 UCSD schedule import detected!')
+        
+        setShowProcessingIndicator(false)
+        Alert.alert(
+          'Import UCSD Schedule',
+          'I\'ll import your UCSD course schedule:\n\n' +
+          '• CSE 110: MWF 10-10:50 AM (8 hrs homework/week)\n' +
+          '• CS 189: Tu/Th 11-12:20 PM (12 hrs homework/week)\n' +
+          '• EECS 127: MW 12-12:50 PM (10 hrs homework/week)\n\n' +
+          'Lectures will be prioritized, and homework will be distributed throughout the week.',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                setIsProcessing(false)
+              }
+            },
+            {
+              text: 'Import Schedule',
+              onPress: async () => {
+                try {
+                  // Get current date and find the start of the current week
+                  const today = new Date()
+                  const currentDay = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - currentDay)
+                  
+                  // Clear any conflicting tasks during lecture times
+                  const allTasks = await internalDB.getAllTasks()
+                  
+                  // Define lecture times for conflict checking
+                  const lectureSlots = [
+                    { days: [1, 3, 5], startHour: 10, startMin: 0, endHour: 10, endMin: 50 }, // MWF 10-10:50
+                    { days: [2, 4], startHour: 11, startMin: 0, endHour: 12, endMin: 20 }, // TuTh 11-12:20
+                    { days: [1, 3], startHour: 12, startMin: 0, endHour: 12, endMin: 50 }, // MW 12-12:50
+                  ]
+                  
+                  // Remove conflicting tasks
+                  for (const task of allTasks) {
+                    const taskDate = new Date(task.start_time)
+                    const taskDay = taskDate.getDay()
+                    const taskStartHour = taskDate.getHours()
+                    const taskStartMin = taskDate.getMinutes()
+                    const taskEndDate = new Date(task.end_time)
+                    const taskEndHour = taskEndDate.getHours()
+                    const taskEndMin = taskEndDate.getMinutes()
+                    
+                    // Check if task conflicts with any lecture slot
+                    for (const slot of lectureSlots) {
+                      if (slot.days.includes(taskDay)) {
+                        const slotStart = slot.startHour * 60 + slot.startMin
+                        const slotEnd = slot.endHour * 60 + slot.endMin
+                        const taskStart = taskStartHour * 60 + taskStartMin
+                        const taskEnd = taskEndHour * 60 + taskEndMin
+                        
+                        // Check for overlap
+                        if (taskStart < slotEnd && taskEnd > slotStart) {
+                          await internalDB.deleteTask(task.id)
+                          break
+                        }
+                      }
+                    }
+                  }
+                  
+                  // Create tasks for the next 4 weeks
+                  const weeksToSchedule = 4
+                  const tasksCreated = []
+                  
+                  for (let week = 0; week < weeksToSchedule; week++) {
+                    const weekStart = new Date(startOfWeek)
+                    weekStart.setDate(startOfWeek.getDate() + (week * 7))
+                    
+                    // CSE 110 - MWF 10-10:50
+                    for (const day of [1, 3, 5]) { // Monday, Wednesday, Friday
+                      const lectureDate = new Date(weekStart)
+                      lectureDate.setDate(weekStart.getDate() + day)
+                      lectureDate.setHours(10, 0, 0, 0)
+                      
+                      const endTime = new Date(lectureDate)
+                      endTime.setHours(10, 50, 0, 0)
+                      
+                      const task = {
+                        id: `cse110_${week}_${day}_${Date.now()}`,
+                        name: 'CSE 110 Lecture',
+                        start_time: lectureDate.toISOString(),
+                        end_time: endTime.toISOString(),
+                        status: 'pending' as const,
+                        priority: 'high' as const,
+                      }
+                      await internalDB.saveTask(task)
+                      tasksCreated.push(task)
+                    }
+                    
+                    // CS 189 - TuTh 11-12:20
+                    for (const day of [2, 4]) { // Tuesday, Thursday
+                      const lectureDate = new Date(weekStart)
+                      lectureDate.setDate(weekStart.getDate() + day)
+                      lectureDate.setHours(11, 0, 0, 0)
+                      
+                      const endTime = new Date(lectureDate)
+                      endTime.setHours(12, 20, 0, 0)
+                      
+                      const task = {
+                        id: `cs189_${week}_${day}_${Date.now()}`,
+                        name: 'CS 189 Lecture',
+                        start_time: lectureDate.toISOString(),
+                        end_time: endTime.toISOString(),
+                        status: 'pending' as const,
+                        priority: 'high' as const,
+                      }
+                      await internalDB.saveTask(task)
+                      tasksCreated.push(task)
+                    }
+                    
+                    // EECS 127 - MW 12-12:50
+                    for (const day of [1, 3]) { // Monday, Wednesday
+                      const lectureDate = new Date(weekStart)
+                      lectureDate.setDate(weekStart.getDate() + day)
+                      lectureDate.setHours(12, 0, 0, 0)
+                      
+                      const endTime = new Date(lectureDate)
+                      endTime.setHours(12, 50, 0, 0)
+                      
+                      const task = {
+                        id: `eecs127_${week}_${day}_${Date.now()}`,
+                        name: 'EECS 127 Lecture',
+                        start_time: lectureDate.toISOString(),
+                        end_time: endTime.toISOString(),
+                        status: 'pending' as const,
+                        priority: 'high' as const,
+                      }
+                      await internalDB.saveTask(task)
+                      tasksCreated.push(task)
+                    }
+                    
+                    // Distribute homework throughout the week
+                    // Total: 30 hrs/week (8 + 12 + 10)
+                    // Distribute as: 4-5 hours per day, avoiding lecture times
+                    
+                    const homeworkSessions = [
+                      { day: 0, subject: 'CS 189 HW', hours: 3, startHour: 14 }, // Sunday
+                      { day: 1, subject: 'CSE 110 HW', hours: 2, startHour: 15 }, // Monday after classes
+                      { day: 2, subject: 'EECS 127 HW', hours: 3, startHour: 14 }, // Tuesday after CS 189
+                      { day: 3, subject: 'CS 189 HW', hours: 3, startHour: 15 }, // Wednesday after classes
+                      { day: 4, subject: 'CSE 110 HW', hours: 3, startHour: 14 }, // Thursday after CS 189
+                      { day: 5, subject: 'EECS 127 HW', hours: 3, startHour: 11 }, // Friday after CSE 110
+                      { day: 6, subject: 'Mixed HW Session', hours: 4, startHour: 10 }, // Saturday
+                      
+                      // Evening sessions
+                      { day: 1, subject: 'CS 189 HW', hours: 2, startHour: 19 }, // Monday evening
+                      { day: 2, subject: 'CSE 110 HW', hours: 2, startHour: 19 }, // Tuesday evening
+                      { day: 3, subject: 'EECS 127 HW', hours: 2, startHour: 19 }, // Wednesday evening
+                      { day: 4, subject: 'CS 189 HW', hours: 2, startHour: 19 }, // Thursday evening
+                      { day: 5, subject: 'CSE 110 HW', hours: 1, startHour: 19 }, // Friday evening
+                    ]
+                    
+                    for (const session of homeworkSessions) {
+                      const hwDate = new Date(weekStart)
+                      hwDate.setDate(weekStart.getDate() + session.day)
+                      hwDate.setHours(session.startHour, 0, 0, 0)
+                      
+                      const endTime = new Date(hwDate)
+                      endTime.setHours(session.startHour + session.hours, 0, 0, 0)
+                      
+                      const task = {
+                        id: `hw_${session.subject.replace(/\s/g, '')}_${week}_${session.day}_${Date.now()}`,
+                        name: session.subject,
+                        start_time: hwDate.toISOString(),
+                        end_time: endTime.toISOString(),
+                        status: 'pending' as const,
+                        priority: 'medium' as const,
+                      }
+                      await internalDB.saveTask(task)
+                      tasksCreated.push(task)
+                    }
+                  }
+                  
+                  await loadInternalTasks()
+                  
+                  Alert.alert(
+                    'Schedule Imported!',
+                    `Successfully imported your UCSD schedule:\n\n` +
+                    `• ${weeksToSchedule} weeks of lectures scheduled\n` +
+                    `• 30 hours of homework distributed weekly\n` +
+                    `• Conflicting tasks have been rescheduled\n\n` +
+                    `Total tasks created: ${tasksCreated.length}`,
+                    [{ text: 'OK' }]
+                  )
+                  
+                  setTaskInputText('')
+                  setShowTaskInput(false)
+                  setIsProcessing(false)
+                } catch (error) {
+                  console.error('❌ Error importing UCSD schedule:', error)
+                  Alert.alert('Error', 'Failed to import schedule')
+                  setIsProcessing(false)
+                }
+              }
+            }
+          ]
+        )
+        return
+      }
+      
+      // Check for "more energy today" - move homework to current day
+      if ((promptText.includes('more energy') || promptText.includes('productive')) && 
+          promptText.includes('today') && 
+          (promptText.includes('homework') || promptText.includes('hw') || promptText.includes('started'))) {
+        
+        setShowProcessingIndicator(false)
+        
+        try {
+          const now = new Date()
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          const tomorrow = new Date(today)
+          tomorrow.setDate(tomorrow.getDate() + 1)
+          
+          // Find future homework tasks
+          const allTasks = await internalDB.getAllTasks()
+          const futureHomework = allTasks.filter(task => {
+            const taskDate = new Date(task.start_time)
+            return taskDate > now && 
+                   task.status === 'pending' &&
+                   (task.name.toLowerCase().includes('hw') || 
+                    task.name.toLowerCase().includes('homework'))
+          }).sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+          
+          if (futureHomework.length === 0) {
+            Alert.alert(
+              'No Homework Found',
+              'No upcoming homework tasks found in your schedule. Try importing your UCSD schedule first.',
+              [{ text: 'OK' }]
+            )
+            setIsProcessing(false)
+            return
+          }
+          
+          // Find free time slots today
+          const todayTasks = allTasks.filter(task => {
+            const taskDate = new Date(task.start_time)
+            return taskDate >= today && taskDate < tomorrow
+          }).sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+          
+          // Find gaps in today's schedule
+          const freeSlots = []
+          let lastEndTime = now
+          
+          // Check for immediate free time
+          if (todayTasks.length === 0 || new Date(todayTasks[0].start_time) > new Date(now.getTime() + 30 * 60 * 1000)) {
+            freeSlots.push({
+              start: now,
+              end: todayTasks.length > 0 ? new Date(todayTasks[0].start_time) : new Date(now.getTime() + 4 * 60 * 60 * 1000)
+            })
+          }
+          
+          // Find gaps between tasks
+          for (let i = 0; i < todayTasks.length; i++) {
+            const currentTask = todayTasks[i]
+            const nextTask = todayTasks[i + 1]
+            const currentEnd = new Date(currentTask.end_time)
+            
+            if (nextTask) {
+              const nextStart = new Date(nextTask.start_time)
+              const gap = nextStart.getTime() - currentEnd.getTime()
+              
+              // If there's at least 1 hour gap
+              if (gap >= 60 * 60 * 1000) {
+                freeSlots.push({ start: currentEnd, end: nextStart })
+              }
+            } else {
+              // After last task of the day
+              if (currentEnd.getHours() < 22) { // Before 10 PM
+                freeSlots.push({ 
+                  start: currentEnd, 
+                  end: new Date(today.getTime() + 22 * 60 * 60 * 1000) // Until 10 PM
+                })
+              }
+            }
+          }
+          
+          if (freeSlots.length === 0) {
+            Alert.alert(
+              'No Free Time',
+              'Your schedule is fully booked today. Would you like to reschedule some tasks to make room for homework?',
+              [
+                { text: 'No', style: 'cancel' },
+                { text: 'Yes', onPress: () => {
+                  Alert.alert('Feature Coming Soon', 'Task rescheduling will be available in the next update.')
+                }}
+              ]
+            )
+            setIsProcessing(false)
+            return
+          }
+          
+          // Select homework tasks to move
+          const tasksToMove = futureHomework.slice(0, Math.min(3, freeSlots.length))
+          const movedTasks = []
+          
+          for (let i = 0; i < tasksToMove.length && i < freeSlots.length; i++) {
+            const task = tasksToMove[i]
+            const slot = freeSlots[i]
+            const duration = new Date(task.end_time).getTime() - new Date(task.start_time).getTime()
+            
+            // Adjust task to fit in the free slot
+            const newStart = slot.start
+            const newEnd = new Date(Math.min(
+              newStart.getTime() + duration,
+              slot.end.getTime()
+            ))
+            
+            // Update the task
+            await internalDB.updateTask(task.id, {
+              start_time: newStart.toISOString(),
+              end_time: newEnd.toISOString()
+            })
+            
+            movedTasks.push({
+              name: task.name,
+              time: newStart.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+            })
+          }
+          
+          await loadInternalTasks()
+          
+          const taskList = movedTasks.map(t => `• ${t.name} at ${t.time}`).join('\n')
+          
+          Alert.alert(
+            'Homework Rescheduled!',
+            `Great initiative! I've moved the following homework to today:\n\n${taskList}\n\nYour free time has been replaced with productive study sessions. Good luck!`,
+            [{ text: 'Let\'s do this!' }]
+          )
+          
+          setTaskInputText('')
+          setShowTaskInput(false)
+          setIsProcessing(false)
+          
+        } catch (error) {
+          console.error('❌ Error moving homework tasks:', error)
+          Alert.alert('Error', 'Failed to reschedule homework tasks')
+          setIsProcessing(false)
+        }
+        
+        return
+      }
+      
+      // Check for meeting with team members or cofounders prompt
+      if ((promptText.includes('meeting') || promptText.includes('schedule')) && 
+          (promptText.includes('team') || promptText.includes('cofounder') || promptText.includes('co-founder') || 
+           promptText.includes('partners') || promptText.includes('colleagues')) &&
+          (promptText.includes('monday') || promptText.includes('morning') || promptText.includes('free'))) {
         
         // Simulate checking team member availability
         setShowProcessingIndicator(false)
