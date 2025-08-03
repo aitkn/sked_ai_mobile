@@ -26,6 +26,7 @@ import * as Speech from 'expo-speech'
 import { internalDB, InternalTask } from '@/lib/internal-db'
 import { supabase } from '@/lib/supabase'
 import { generateSimpleMockTasks } from '@/lib/simple-mock-data'
+import { timelineWithGym, importTimelineToTasks, addShowerTasksToSchedule, addBusinessTripToWeekend } from '@/lib/demo-timelines'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { GlassMorphism } from '@/components/GlassMorphism'
 import { ThemedGradient } from '@/components/ThemedGradient'
@@ -78,6 +79,7 @@ export default function ScheduleScreen() {
   const [isListening, setIsListening] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [showProcessingIndicator, setShowProcessingIndicator] = useState(false)
+  const [processingMessage, setProcessingMessage] = useState('Sked is processing your request...')
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [contextMenuTask, setContextMenuTask] = useState<Task | null>(null)
   const [isLoadingMockData, setIsLoadingMockData] = useState(false)
@@ -114,7 +116,7 @@ export default function ScheduleScreen() {
 
   // Real-time subscription to listen for timeline updates from the processor
   useEffect(() => {
-    console.log('🔗 Setting up real-time subscription for timeline updates...')
+    // // console.log('🔗 Setting up real-time subscription for timeline updates...')
     
     const channel = supabase
       .channel('timeline-updates')
@@ -126,9 +128,9 @@ export default function ScheduleScreen() {
           table: 'user_timeline'
         },
         (payload) => {
-          console.log('📡 Timeline update detected via real-time:', payload)
-          console.log('📡 Event type:', payload.eventType)
-          console.log('📡 New timeline data:', payload.new)
+          // console.log('📡 Timeline update detected via real-time:', payload)
+          // console.log('📡 Event type:', payload.eventType)
+          // console.log('📡 New timeline data:', payload.new)
           
           // When timeline is updated by processor, refresh the UI
           // loadTimelineData() // Disabled - using mock data only
@@ -138,18 +140,18 @@ export default function ScheduleScreen() {
         'broadcast',
         { event: 'timeline_update' },
         (payload) => {
-          console.log('📡 Timeline broadcast received:', payload)
+          // console.log('📡 Timeline broadcast received:', payload)
           // Reload tasks when timeline is updated by processor
           // loadTimelineData() // Disabled - using mock data only
         }
       )
       .subscribe((status) => {
-        console.log('📡 Real-time subscription status:', status)
+        // console.log('📡 Real-time subscription status:', status)
       })
 
     // Cleanup subscription when component unmounts
     return () => {
-      console.log('🔌 Cleaning up real-time subscription...')
+      // console.log('🔌 Cleaning up real-time subscription...')
       supabase.removeChannel(channel)
     }
   }, [])
@@ -158,18 +160,18 @@ export default function ScheduleScreen() {
   const loadTimelineData = async () => {
     // Prevent multiple simultaneous calls
     if (isLoadingMockData) {
-      console.log('📡 Mock data loading already in progress, skipping...')
+      // console.log('📡 Mock data loading already in progress, skipping...')
       return
     }
     
     try {
       setIsLoadingMockData(true)
-      console.log('📡 Loading simple mock data...')
+      // console.log('📡 Loading simple mock data...')
       
       // Generate simple mock tasks
       const mockTasks = generateSimpleMockTasks()
       
-      console.log(`📡 Generated ${mockTasks.length} simple mock tasks`)
+      // console.log(`📡 Generated ${mockTasks.length} simple mock tasks`)
       
       // Clear existing tasks and load mock data
       await internalDB.clearAllTasks()
@@ -191,7 +193,7 @@ export default function ScheduleScreen() {
         })
       }
       
-      console.log(`📡 Loaded ${mockTasks.length} mock tasks into internal database`)
+      // console.log(`📡 Loaded ${mockTasks.length} mock tasks into internal database`)
       
       // Reload internal tasks to show updated data
       loadInternalTasks()
@@ -205,7 +207,7 @@ export default function ScheduleScreen() {
 
   // Legacy function - replaced with mock data system
   const syncTasksWithTimeline = async (timelineTasks: any[]) => {
-    console.log('🔄 syncTasksWithTimeline is deprecated - using mock data instead')
+    // console.log('🔄 syncTasksWithTimeline is deprecated - using mock data instead')
     return // Exit immediately - function disabled
     
     // 1. Get current tasks and categorize them by status
@@ -216,12 +218,12 @@ export default function ScheduleScreen() {
       pending: currentTasks.filter(t => t.status === 'pending')
     }
     
-    console.log('📊 Current task categories:', {
-      started: tasksByCategory.started.length,
-      completed: tasksByCategory.completed.length,
-      pending: tasksByCategory.pending.length,
-      total: currentTasks.length
-    })
+    // console.log('📊 Current task categories:', {
+    //   started: tasksByCategory.started.length,
+    //   completed: tasksByCategory.completed.length,
+    //   pending: tasksByCategory.pending.length,
+    //   total: currentTasks.length
+    // })
     
     // 2. Create timeline task ID mapping for quick lookup
     const timelineTaskMap = new Map(
@@ -232,12 +234,12 @@ export default function ScheduleScreen() {
     )
     const timelineTaskIds = new Set(timelineTaskMap.keys())
     
-    console.log('📋 Timeline tasks to sync:', timelineTaskIds.size)
+    // console.log('📋 Timeline tasks to sync:', timelineTaskIds.size)
     
     // 3. Process each category intelligently
     
     // STARTED TASKS: Preserve status, update timeline data if task still exists
-    console.log('🚀 Processing started tasks...')
+    // console.log('🚀 Processing started tasks...')
     for (const startedTask of tasksByCategory.started) {
       if (timelineTaskMap.has(startedTask.id)) {
         const timelineData = timelineTaskMap.get(startedTask.id)!
@@ -252,15 +254,15 @@ export default function ScheduleScreen() {
           completed_at: startedTask.completed_at
         }
         await internalDB.saveTask(updatedTask)
-        console.log(`✅ Updated started task: ${updatedTask.name}`)
+        // console.log(`✅ Updated started task: ${updatedTask.name}`)
       } else {
         // Started task no longer in timeline - keep it but log warning
-        console.log(`⚠️ Started task not in timeline, preserving: ${startedTask.name}`)
+        // console.log(`⚠️ Started task not in timeline, preserving: ${startedTask.name}`)
       }
     }
     
     // COMPLETED TASKS: Preserve if still in timeline, otherwise keep for history
-    console.log('✅ Processing completed tasks...')
+    // console.log('✅ Processing completed tasks...')
     for (const completedTask of tasksByCategory.completed) {
       if (timelineTaskMap.has(completedTask.id)) {
         const timelineData = timelineTaskMap.get(completedTask.id)!
@@ -275,15 +277,15 @@ export default function ScheduleScreen() {
           completed_at: completedTask.completed_at
         }
         await internalDB.saveTask(updatedTask)
-        console.log(`✅ Updated completed task: ${updatedTask.name}`)
+        // console.log(`✅ Updated completed task: ${updatedTask.name}`)
       } else {
         // Completed task no longer in timeline - preserve for history
-        console.log(`📚 Completed task not in timeline, preserving for history: ${completedTask.name}`)
+        // console.log(`📚 Completed task not in timeline, preserving for history: ${completedTask.name}`)
       }
     }
     
     // PENDING TASKS: Update with new timeline data or remove if not present
-    console.log('⏳ Processing pending tasks...')
+    // console.log('⏳ Processing pending tasks...')
     for (const pendingTask of tasksByCategory.pending) {
       if (timelineTaskMap.has(pendingTask.id)) {
         const timelineData = timelineTaskMap.get(pendingTask.id)!
@@ -296,16 +298,16 @@ export default function ScheduleScreen() {
           status: 'pending' as const
         }
         await internalDB.saveTask(updatedTask)
-        console.log(`⏳ Updated pending task: ${updatedTask.name}`)
+        // console.log(`⏳ Updated pending task: ${updatedTask.name}`)
       } else {
         // Pending task no longer in timeline - safe to remove
-        console.log(`🗑️ Removing pending task not in timeline: ${pendingTask.name}`)
+        // console.log(`🗑️ Removing pending task not in timeline: ${pendingTask.name}`)
         await internalDB.deleteTask(pendingTask.id)
       }
     }
     
     // 4. Add new tasks from timeline that don't exist in any category
-    console.log('➕ Adding new tasks from timeline...')
+    // console.log('➕ Adding new tasks from timeline...')
     const existingTaskIds = new Set(currentTasks.map(t => t.id))
     
     for (const [taskId, timelineTask] of Array.from(timelineTaskMap)) {
@@ -322,11 +324,11 @@ export default function ScheduleScreen() {
           updated_at: new Date().toISOString(),
         }
         await internalDB.saveTask(newTask)
-        console.log(`➕ Added new task: ${newTask.name} with start time: ${new Date(newTask.start_time).toLocaleString()}`)
+        // console.log(`➕ Added new task: ${newTask.name} with start time: ${new Date(newTask.start_time).toLocaleString()}`)
       }
     }
     
-    console.log('✅ Category-based task sync completed')
+    // console.log('✅ Category-based task sync completed')
   }
 
   const loadInternalTasks = async () => {
@@ -344,7 +346,7 @@ export default function ScheduleScreen() {
             
             // If task ended more than 1 minute ago, reset to pending
             if (timeSinceEnd > 60000) {
-              console.log(`🧹 Cleaning up stale task: ${task.name} (ended ${Math.round(timeSinceEnd / 1000)}s ago)`)
+              // console.log(`🧹 Cleaning up stale task: ${task.name} (ended ${Math.round(timeSinceEnd / 1000)}s ago)`)
               await internalDB.updateTask(task.id, { status: 'pending' })
               return { ...task, status: 'pending' as const }
             }
@@ -357,7 +359,7 @@ export default function ScheduleScreen() {
       
       // If no tasks exist, load mock data automatically
       if (convertedTasks.length === 0) {
-        console.log('📱 No tasks found, loading mock data...')
+        // console.log('📱 No tasks found, loading mock data...')
         await loadTimelineData() // This will load mock data
         return
       }
@@ -379,7 +381,7 @@ export default function ScheduleScreen() {
   useEffect(() => {
     // Initialize Expo notifications
     expoNotificationService.initialize().then(() => {
-      console.log('Expo notifications initialized successfully')
+      // console.log('Expo notifications initialized successfully')
     }).catch(error => {
       console.error('Failed to initialize Expo notifications:', error)
     })
@@ -440,7 +442,7 @@ export default function ScheduleScreen() {
             },
           },
         ])
-        console.log('Notification categories set up successfully')
+        // console.log('Notification categories set up successfully')
       } catch (error) {
         console.error('Failed to set up notification categories:', error)
       }
@@ -449,22 +451,22 @@ export default function ScheduleScreen() {
     setupNotificationCategories()
 
     const subscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
-      console.log('Notification interaction:', response)
-      console.log('Action identifier:', response.actionIdentifier)
-      console.log('Notification content:', response.notification.request.content)
+      // console.log('Notification interaction:', response)
+      // console.log('Action identifier:', response.actionIdentifier)
+      // console.log('Notification content:', response.notification.request.content)
       
       const actionIdentifier = response.actionIdentifier
       const notificationTitle = response.notification.request.content.title
       
       if (actionIdentifier === 'open_app') {
         // User tapped "Take me back to the app" - just log it
-        console.log(`User returned to app via notification: ${notificationTitle}`)
+        // console.log(`User returned to app via notification: ${notificationTitle}`)
       } else if (actionIdentifier === 'ok_action') {
         // User tapped OK - just log it
-        console.log(`User tapped OK on notification: ${notificationTitle}`)
+        // console.log(`User tapped OK on notification: ${notificationTitle}`)
       } else if (actionIdentifier === 'start_task') {
         const taskId = response.notification.request.content.data?.taskId as string
-        console.log(`User pressed Start Task from notification for task: ${taskId}`)
+        // console.log(`User pressed Start Task from notification for task: ${taskId}`)
         
         // Actually start the task
         if (taskId) {
@@ -480,7 +482,7 @@ export default function ScheduleScreen() {
                 details: `Started via notification at ${new Date().toLocaleTimeString()}`
               })
             }
-            console.log(`✅ Started task via notification: ${taskId}`)
+            // console.log(`✅ Started task via notification: ${taskId}`)
             
             // Send confirmation notification
             setTimeout(async () => {
@@ -520,7 +522,7 @@ export default function ScheduleScreen() {
         }
       } else if (actionIdentifier === 'complete_task') {
         const taskId = response.notification.request.content.data?.taskId as string
-        console.log(`User pressed Mark Complete from notification for task: ${taskId}`)
+        // console.log(`User pressed Mark Complete from notification for task: ${taskId}`)
         
         // Actually complete the task
         if (taskId) {
@@ -540,7 +542,7 @@ export default function ScheduleScreen() {
                 details: `Completed via notification at ${new Date().toLocaleTimeString()}`
               })
             }
-            console.log(`✅ Completed task via notification: ${taskId}`)
+            // console.log(`✅ Completed task via notification: ${taskId}`)
             
             // Send confirmation notification
             setTimeout(async () => {
@@ -576,10 +578,10 @@ export default function ScheduleScreen() {
         }
       } else if (actionIdentifier === 'dismiss' || actionIdentifier === 'keep_running') {
         // User dismissed or chose to keep running - just log it
-        console.log(`User chose ${actionIdentifier} for notification: ${notificationTitle}`)
+        // console.log(`User chose ${actionIdentifier} for notification: ${notificationTitle}`)
       } else {
         // Default tap (on notification body) - just log it
-        console.log(`User tapped notification: ${notificationTitle}`)
+        // console.log(`User tapped notification: ${notificationTitle}`)
       }
     })
 
@@ -779,20 +781,20 @@ export default function ScheduleScreen() {
       
       // Debug logging for notification timing
       if (Math.abs(timeDiff) < 15000) { // Log when within 15 seconds
-        console.log(`🔔 Next task "${nextTask.name}" timing:`, {
-          timeDiff: Math.round(timeDiff / 1000) + 's',
-          isReady: taskStart <= now + 2000,
-          inWindow: taskStart > now - 10000,
-          alreadyAlerted: alertedTasks.has(nextTask.local_id),
-          appState
-        })
+        // console.log(`🔔 Next task "${nextTask.name}" timing:`, {
+        //   timeDiff: Math.round(timeDiff / 1000) + 's',
+        //   isReady: taskStart <= now + 2000,
+        //   inWindow: taskStart > now - 10000,
+        //   alreadyAlerted: alertedTasks.has(nextTask.local_id),
+        //   appState
+        // })
       }
       
       // Task is ready to start (within 10 seconds of start time, allowing 2s early trigger)
       if (taskStart <= now + 2000 && taskStart > now - 10000) {
         // Only notify once per task
         if (!alertedTasks.has(nextTask.local_id)) {
-          console.log(`🚨 TRIGGERING start notification for: ${nextTask.name}`)
+          // console.log(`🚨 TRIGGERING start notification for: ${nextTask.name}`)
           setAlertedTasks(prev => new Set(prev).add(nextTask.local_id))
           
           // Send background notification only if app is not in foreground
@@ -810,7 +812,7 @@ export default function ScheduleScreen() {
                     },
                     trigger: null,
                   })
-                  console.log('✅ Task start notification sent for:', nextTask.name)
+                  // console.log('✅ Task start notification sent for:', nextTask.name)
                 }
               } catch (error) {
                 console.error('❌ Task start notification failed:', error)
@@ -846,7 +848,7 @@ export default function ScheduleScreen() {
                   },
                   trigger: null,
                 })
-                console.log('✅ Task completion notification sent')
+                // console.log('✅ Task completion notification sent')
               } catch (error) {
                 console.error('❌ Task completion notification failed:', error)
               }
@@ -876,7 +878,7 @@ export default function ScheduleScreen() {
             ? { ...t, status: 'in_progress' }
             : t
         ))
-        console.log(`✅ Started task: ${task.name}`)
+        // console.log(`✅ Started task: ${task.name}`)
       } catch (error) {
         console.error('❌ Error starting task:', error)
       }
@@ -927,7 +929,7 @@ export default function ScheduleScreen() {
           })
         }, 2000) // Show completed state for 2 seconds
         
-        console.log(`✅ Manually completed task: ${task.name}`)
+        // console.log(`✅ Manually completed task: ${task.name}`)
       } catch (error) {
         console.error('❌ Error completing task:', error)
       }
@@ -960,7 +962,7 @@ export default function ScheduleScreen() {
             : t
         ))
         
-        console.log(`⏸️ Paused task: ${task.name}`)
+        // console.log(`⏸️ Paused task: ${task.name}`)
       } catch (error) {
         console.error('❌ Error pausing task:', error)
       }
@@ -993,7 +995,7 @@ export default function ScheduleScreen() {
             : t
         ))
         
-        console.log(`❌ Cancelled task: ${task.name}`)
+        // console.log(`❌ Cancelled task: ${task.name}`)
       } catch (error) {
         console.error('❌ Error cancelling task:', error)
       }
@@ -1024,7 +1026,7 @@ export default function ScheduleScreen() {
             : t
         ))
         
-        console.log(`▶️ Resumed task: ${task.name}`)
+        // console.log(`▶️ Resumed task: ${task.name}`)
       } catch (error) {
         console.error('❌ Error resuming task:', error)
       }
@@ -1089,8 +1091,8 @@ export default function ScheduleScreen() {
   }
 
   const handleCreateTaskFromInput = async () => {
-    Alert.alert('DEBUG', `Function called with: "${taskInputText}"`)
-    console.log('🎯 handleCreateTaskFromInput called with input:', taskInputText)
+    // Alert.alert('DEBUG', `Function called with: "${taskInputText}"`)
+    // console.log('🎯 handleCreateTaskFromInput called with input:', taskInputText)
     
     if (!taskInputText.trim()) {
       Alert.alert('Error', 'Please enter a task description')
@@ -1098,28 +1100,33 @@ export default function ScheduleScreen() {
     }
     
     setIsProcessing(true)
+    setShowProcessingIndicator(true)
+    setProcessingMessage('Sked is processing your request...')
     
     try {
-      console.log('🔍 Starting prompt submission process...')
+      // console.log('🔍 Starting prompt submission process...')
+      
+      // Wait 1.5 seconds to make it feel more realistic
+      await new Promise(resolve => setTimeout(resolve, 1500))
       
       // Process the prompt text
       const promptText = taskInputText.trim().toLowerCase()
-      console.log('🎯 Processed prompt text:', promptText)
+      // console.log('🎯 Processed prompt text:', promptText)
       
       // HARDCODED FUNCTIONALITY - Handle specific prompts locally
       
       // Handle delete Saturday tasks
       if (promptText.includes('delete tasks for saturday')) {
-        console.log('🎯 Hardcoded response: Deleting all Saturday tasks...')
+        // console.log('🎯 Hardcoded response: Deleting all Saturday tasks...')
         
         // Get all tasks and filter for ANY Saturday
         const allTasks = await internalDB.getAllTasks()
-        console.log(`🎯 Total tasks in database: ${allTasks.length}`)
+        // console.log(`🎯 Total tasks in database: ${allTasks.length}`)
         
         // Debug: Show all tasks with their dates
         allTasks.forEach(task => {
           const taskDate = new Date(task.start_time)
-          console.log(`🎯 Task: ${task.name} - Date: ${taskDate.toDateString()} - Day: ${taskDate.getDay()}`)
+          // console.log(`🎯 Task: ${task.name} - Date: ${taskDate.toDateString()} - Day: ${taskDate.getDay()}`)
         })
         
         const saturdayTasks = allTasks.filter(task => {
@@ -1128,9 +1135,10 @@ export default function ScheduleScreen() {
           return taskStart.getDay() === 6
         })
         
-        console.log(`🎯 Found ${saturdayTasks.length} Saturday tasks to delete across all weeks`)
+        // console.log(`🎯 Found ${saturdayTasks.length} Saturday tasks to delete across all weeks`)
         
         if (saturdayTasks.length === 0) {
+          setShowProcessingIndicator(false)
           Alert.alert(
             'No Saturday Tasks',
             'No tasks found scheduled on any Saturday. Use the Dev tab to create some Saturday tasks first.',
@@ -1145,7 +1153,7 @@ export default function ScheduleScreen() {
         // Delete each Saturday task
         let deletedCount = 0
         for (const task of saturdayTasks) {
-          console.log(`🎯 Deleting task: ${task.name}`)
+          // console.log(`🎯 Deleting task: ${task.name}`)
           const success = await internalDB.deleteTask(task.id)
           if (success) {
             deletedCount++
@@ -1156,6 +1164,7 @@ export default function ScheduleScreen() {
         loadInternalTasks()
         
         // Show success message
+        setShowProcessingIndicator(false)
         Alert.alert(
           'Tasks Deleted',
           `Successfully deleted ${deletedCount} Saturday task${deletedCount !== 1 ? 's' : ''} across all weeks.`,
@@ -1169,9 +1178,11 @@ export default function ScheduleScreen() {
         return
       }
       
-      // Handle phone call with Shanghai scheduling
-      if (promptText.includes('phone call') && promptText.includes('shanghai')) {
-        console.log('🎯 Hardcoded response: Scheduling phone call with Shanghai at 4pm...')
+      // Handle phone call with Shanghai scheduling - now with time zone intelligence
+      if ((promptText.includes('call') || promptText.includes('phone')) && 
+          promptText.includes('shanghai') && 
+          (promptText.includes('mom') || promptText.includes('dad') || promptText.includes('parents'))) {
+        // console.log('🎯 Hardcoded response: Scheduling phone call with Shanghai at 4pm...')
         
         // Extract the day from the prompt (default to tomorrow if not specified)
         let targetDate = new Date()
@@ -1206,14 +1217,7 @@ export default function ScheduleScreen() {
           targetDate.setDate(targetDate.getDate() + 1)
         }
         
-        // Set time to 4pm
-        targetDate.setHours(16, 0, 0, 0)
-        
-        // Create end time (1 hour duration)
-        const endTime = new Date(targetDate)
-        endTime.setHours(17, 0, 0, 0)
-        
-        // Extract who the call is with (default to "parents" if not clear)
+        // Extract who the call is with
         let callWith = 'parents'
         if (promptText.includes('parents')) {
           callWith = 'parents'
@@ -1225,35 +1229,162 @@ export default function ScheduleScreen() {
           callWith = 'family'
         }
         
-        const taskName = `Phone call with ${callWith} in Shanghai`
+        // Calculate optimal time considering time zones
+        // Shanghai is typically 12-16 hours ahead of US (depending on location and DST)
+        // Let's assume 13 hours difference (PST to Shanghai)
+        // Best times: 8-9am Shanghai = 7-8pm PST, or 8-9pm Shanghai = 7-8am PST
         
-        console.log(`🎯 Creating task: ${taskName} on ${targetDate.toDateString()} at 4pm`)
+        // Show time zone recommendation dialog
+        setShowProcessingIndicator(false)
+        Alert.alert(
+          'Time Zone Recommendation',
+          `For calling ${callWith} in Shanghai on ${targetDate.toLocaleDateString('en-US', { weekday: 'long' })}, I suggest:\n\n` +
+          `• 7:00 AM your time (8:00 PM Shanghai) - Good for their evening\n` +
+          `• 8:00 PM your time (9:00 AM Shanghai) - Good for their morning\n\n` +
+          `Which time works better for you?`,
+          [
+            {
+              text: '7:00 AM',
+              onPress: async () => {
+                targetDate.setHours(7, 0, 0, 0)
+                const taskName = `Call ${callWith} in Shanghai (8:00 PM Shanghai time)`
+                
+                try {
+                  await internalDB.addTaskWithDuration(
+                    taskName,
+                    targetDate.toISOString(),
+                    new Date(targetDate.getTime() + 30 * 60 * 1000).toISOString() // 30 minute call
+                  )
+                  
+                  await loadInternalTasks()
+                  
+                  Alert.alert(
+                    'Call Scheduled',
+                    `Phone call with ${callWith} scheduled for:\n` +
+                    `${targetDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at 7:00 AM\n` +
+                    `(8:00 PM Shanghai time)`,
+                    [{ text: 'OK' }]
+                  )
+                  
+                  setTaskInputText('')
+                  setShowTaskInput(false)
+                  setIsProcessing(false)
+                } catch (error) {
+                  console.error('❌ Error creating phone call task:', error)
+                  Alert.alert('Error', 'Failed to schedule phone call')
+                  setIsProcessing(false)
+                }
+              }
+            },
+            {
+              text: '8:00 PM',
+              onPress: async () => {
+                targetDate.setHours(20, 0, 0, 0)
+                const taskName = `Call ${callWith} in Shanghai (9:00 AM Shanghai time)`
+                
+                try {
+                  await internalDB.addTaskWithDuration(
+                    taskName,
+                    targetDate.toISOString(),
+                    new Date(targetDate.getTime() + 30 * 60 * 1000).toISOString() // 30 minute call
+                  )
+                  
+                  await loadInternalTasks()
+                  
+                  Alert.alert(
+                    'Call Scheduled',
+                    `Phone call with ${callWith} scheduled for:\n` +
+                    `${targetDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at 8:00 PM\n` +
+                    `(9:00 AM Shanghai time)`,
+                    [{ text: 'OK' }]
+                  )
+                  
+                  setTaskInputText('')
+                  setShowTaskInput(false)
+                  setIsProcessing(false)
+                } catch (error) {
+                  console.error('❌ Error creating phone call task:', error)
+                  Alert.alert('Error', 'Failed to schedule phone call')
+                  setIsProcessing(false)
+                }
+              }
+            },
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                setIsProcessing(false)
+              }
+            }
+          ]
+        )
+        return
+      }
+      
+      // Check for meeting with team members prompt
+      if (promptText.includes('meeting') && 
+          (promptText.includes('team members') || promptText.includes('3 team members')) && 
+          promptText.includes('monday')) {
         
-        try {
-          await internalDB.addTaskWithDuration(
-            taskName,
-            targetDate.toISOString(),
-            endTime.toISOString()
-          )
-          
-          loadInternalTasks()
-          
-          Alert.alert(
-            'Call Scheduled!',
-            `Scheduled "${taskName}" for ${targetDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at 4:00 PM (1 hour duration)`,
-            [{ text: 'OK' }]
-          )
-          
-          setTaskInputText('')
-          setShowTaskInput(false)
-          setIsProcessing(false)
-          return
-        } catch (error) {
-          console.error('❌ Error creating phone call task:', error)
-          Alert.alert('Error', 'Failed to schedule phone call')
-          setIsProcessing(false)
-          return
-        }
+        // Simulate checking team member availability
+        setShowProcessingIndicator(false)
+        Alert.alert(
+          'Team Availability',
+          'Michael and Trevor are free in the morning, but Alex is busy until 2pm. Would you like to schedule for 3pm?',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                setIsProcessing(false)
+              }
+            },
+            {
+              text: 'Schedule for 3pm',
+              onPress: async () => {
+                // Calculate next Monday
+                let meetingDate = new Date()
+                const currentDay = meetingDate.getDay()
+                const daysUntilMonday = (1 - currentDay + 7) % 7 || 7
+                meetingDate.setDate(meetingDate.getDate() + daysUntilMonday)
+                meetingDate.setHours(15, 0, 0, 0) // 3pm
+                
+                // Create the meeting task
+                const meetingTask = {
+                  id: `meeting_${Date.now()}`,
+                  name: 'Team meeting with Michael, Trevor, and Alex',
+                  start_time: meetingDate.toISOString(),
+                  end_time: new Date(meetingDate.getTime() + 60 * 60 * 1000).toISOString(), // 1 hour meeting
+                  status: 'pending' as const,
+                  priority: 'high' as const,
+                }
+                
+                try {
+                  await internalDB.saveTask(meetingTask)
+                  await loadInternalTasks()
+                  
+                  // Show success notification
+                  setTimeout(() => {
+                    Alert.alert(
+                      'Meeting Scheduled',
+                      'Meeting has been scheduled for Monday at 3pm. All team members have been notified.',
+                      [{ text: 'OK' }]
+                    )
+                  }, 500)
+                  
+                  setTaskInputText('')
+                  setShowTaskInput(false)
+                  setIsProcessing(false)
+                } catch (error) {
+                  console.error('❌ Error creating meeting task:', error)
+                  Alert.alert('Error', 'Failed to schedule meeting')
+                  setIsProcessing(false)
+                }
+              }
+            }
+          ]
+        )
+        return
       }
       
       // Check if this is a gym-related prompt
@@ -1272,7 +1403,7 @@ export default function ScheduleScreen() {
       
       if (isBusinessTripPrompt) {
         // Handle business trip with running prompt
-        console.log('💼 Business trip prompt detected! Updating weekend schedule...')
+        // console.log('💼 Business trip prompt detected! Updating weekend schedule...')
         
         // Get current tasks
         const currentTasks = await internalDB.getAllTasks()
@@ -1305,6 +1436,7 @@ export default function ScheduleScreen() {
         await loadInternalTasks()
         
         // Show success message
+        setShowProcessingIndicator(false)
         Alert.alert(
           'Weekend Schedule Updated!',
           'Your weekend has been rescheduled with business trip work sessions (9 AM - 5 PM) and morning runs (7-8 AM) during optimal weather windows.',
@@ -1326,7 +1458,7 @@ export default function ScheduleScreen() {
       
       if (isShowerPrompt) {
         // Handle shower prompt - add shower tasks intelligently
-        console.log('🚿 Shower prompt detected! Adding shower tasks...')
+        // console.log('🚿 Shower prompt detected! Adding shower tasks...')
         
         // Get current tasks
         const currentTasks = await internalDB.getAllTasks()
@@ -1359,6 +1491,7 @@ export default function ScheduleScreen() {
         await loadInternalTasks()
         
         // Show success message
+        setShowProcessingIndicator(false)
         Alert.alert(
           'Schedule Updated!',
           'Daily shower tasks have been added to your schedule. Showers are scheduled after gym sessions on workout days, and in the morning on rest days.',
@@ -1380,7 +1513,7 @@ export default function ScheduleScreen() {
       
       if (isGymPrompt) {
         // Handle gym prompt - replace timeline with gym schedule
-        console.log('🏋️ Gym prompt detected! Replacing schedule...')
+        // console.log('🏋️ Gym prompt detected! Replacing schedule...')
         
         // Clear existing tasks
         await internalDB.clearAllTasks()
@@ -1410,6 +1543,7 @@ export default function ScheduleScreen() {
         await loadInternalTasks()
         
         // Show success message
+        setShowProcessingIndicator(false)
         Alert.alert(
           'Schedule Updated!',
           `Your schedule has been optimized with ${isGymPrompt ? '5 gym sessions' : 'your requested tasks'} added throughout the week.`,
@@ -1430,6 +1564,7 @@ export default function ScheduleScreen() {
       }
       
       // For other prompts, show a generic message
+      setShowProcessingIndicator(false)
       Alert.alert(
         'AI Schedule Request Received', 
         'Your schedule request has been received. In the full version, AI will process this and create an optimized timeline for you.',
@@ -1444,8 +1579,8 @@ export default function ScheduleScreen() {
       /* 
       // Get current user
       const { data: { user }, error: authError } = await supabase.auth.getUser()
-      console.log('🔍 Auth check - user:', user ? 'exists' : 'null', 'error:', authError)
-      console.log('🔍 Auth user details:', user ? { id: user.id, email: user.email } : 'null')
+      // console.log('🔍 Auth check - user:', user ? 'exists' : 'null', 'error:', authError)
+      // console.log('🔍 Auth user details:', user ? { id: user.id, email: user.email } : 'null')
       
       if (authError) {
         console.error('❌ Authentication error:', authError)
@@ -1459,24 +1594,24 @@ export default function ScheduleScreen() {
         return
       }
 
-      console.log('🔍 User ID:', user.id)
+      // console.log('🔍 User ID:', user.id)
 
       // Save the prompt directly - no need to check table existence
-      console.log('🔍 Attempting to save prompt...')
+      // console.log('🔍 Attempting to save prompt...')
       const promptData = {
         user_id: user.id,
         prompt_text: taskInputText.trim()
       }
       
-      console.log('🔍 Prompt data to insert:', promptData)
-      console.log('🔍 About to insert into public.user_prompt table...')
+      // console.log('🔍 Prompt data to insert:', promptData)
+      // console.log('🔍 About to insert into public.user_prompt table...')
       
       const { data, error } = await supabase
         .from('user_prompt')
         .insert(promptData)
         .select() // Add select to return the inserted data
       
-      console.log('🔍 Insert response - data:', data, 'error:', error)
+      // console.log('🔍 Insert response - data:', data, 'error:', error)
 
       if (error) {
         console.error('❌ Error saving prompt:', error)
@@ -1494,8 +1629,8 @@ export default function ScheduleScreen() {
         return
       }
 
-      console.log('✅ Prompt saved successfully to public.user_prompt!')
-      console.log('✅ Inserted data:', data)
+      // console.log('✅ Prompt saved successfully to public.user_prompt!')
+      // console.log('✅ Inserted data:', data)
       
       // Show success message
       Alert.alert(
@@ -1517,6 +1652,7 @@ export default function ScheduleScreen() {
       
     } catch (error: any) {
       console.error('❌ Error saving prompt:', error)
+      setShowProcessingIndicator(false)
       Alert.alert(
         'Error',
         `Failed to save your prompt: ${error.message}`,
@@ -1569,7 +1705,7 @@ export default function ScheduleScreen() {
             glassIntensity="light"
             containerStyle={{ marginRight: 8, padding: 4 }}
           />
-          <Text style={styles.processingBannerText}>Processing your task request...</Text>
+          <Text style={styles.processingBannerText}>{processingMessage}</Text>
         </View>
       )}
 
@@ -1580,7 +1716,7 @@ export default function ScheduleScreen() {
           <RefreshControl 
             refreshing={false} 
             onRefresh={() => {
-              console.log('📱 Manual refresh triggered - generating fresh mock data')
+              // console.log('📱 Manual refresh triggered - generating fresh mock data')
               loadTimelineData() // This loads fresh mock data
             }} 
           />
@@ -1905,7 +2041,7 @@ export default function ScheduleScreen() {
             {isProcessing && (
               <View style={styles.processingIndicator}>
                 <FontAwesome name="cog" size={16} color={Colors.light.tint} />
-                <Text style={styles.processingText}>AI is creating your schedule...</Text>
+                <Text style={styles.processingText}>{processingMessage}</Text>
               </View>
             )}
 

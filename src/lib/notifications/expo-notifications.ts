@@ -26,7 +26,7 @@ export class ExpoNotificationService {
       }
       
       if (finalStatus !== 'granted') {
-        console.log('Failed to get push token for push notification!')
+        // console.log('Failed to get push token for push notification!')
         return
       }
 
@@ -44,7 +44,7 @@ export class ExpoNotificationService {
       }
 
       this.initialized = true
-      console.log('Expo notifications initialized')
+      // console.log('Expo notifications initialized')
     } catch (error) {
       console.error('Error initializing Expo notifications:', error)
     }
@@ -64,7 +64,7 @@ export class ExpoNotificationService {
         trigger: null, // Immediate notification
       })
       
-      console.log('Scheduled Expo notification for task start')
+      // console.log('Scheduled Expo notification for task start')
     } catch (error) {
       console.error('Error scheduling Expo notification:', error)
     }
@@ -96,7 +96,7 @@ export class ExpoNotificationService {
         },
       })
       
-      console.log(`Scheduled Expo ${type} notification for task ${task.local_id}`)
+      // console.log(`Scheduled Expo ${type} notification for task ${task.local_id}`)
     } catch (error) {
       console.error('Error scheduling Expo notification:', error)
     }

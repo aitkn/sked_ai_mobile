@@ -55,10 +55,10 @@ export class InternalDB {
       const stored = await AsyncStorage.getItem(STORAGE_KEY)
       if (stored) {
         this.tasks = JSON.parse(stored)
-        console.log('📱 Loaded', this.tasks.length, 'tasks from internal DB')
+        // console.log('📱 Loaded', this.tasks.length, 'tasks from internal DB')
       } else {
         this.tasks = []
-        console.log('📱 No tasks found in internal DB, starting fresh')
+        // console.log('📱 No tasks found in internal DB, starting fresh')
       }
       this.loaded = true
       return this.tasks
@@ -74,7 +74,7 @@ export class InternalDB {
   private async saveTasks(): Promise<void> {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(this.tasks))
-      console.log('💾 Saved', this.tasks.length, 'tasks to internal DB')
+      // console.log('💾 Saved', this.tasks.length, 'tasks to internal DB')
     } catch (error) {
       console.error('❌ Error saving tasks to internal DB:', error)
     }
@@ -107,7 +107,7 @@ export class InternalDB {
     this.tasks.push(newTask)
     await this.saveTasks()
     
-    console.log('➕ Added task to internal DB:', newTask.name)
+    // console.log('➕ Added task to internal DB:', newTask.name)
     return newTask
   }
 
@@ -130,7 +130,7 @@ export class InternalDB {
     this.tasks[taskIndex] = updatedTask
     await this.saveTasks()
     
-    console.log('📝 Updated task in internal DB:', updatedTask.name)
+    // console.log('📝 Updated task in internal DB:', updatedTask.name)
     return updatedTask
   }
 
@@ -147,7 +147,7 @@ export class InternalDB {
     const deletedTask = this.tasks.splice(taskIndex, 1)[0]
     await this.saveTasks()
     
-    console.log('🗑️ Deleted task from internal DB:', deletedTask.name)
+    // console.log('🗑️ Deleted task from internal DB:', deletedTask.name)
     return true
   }
 
@@ -167,7 +167,7 @@ export class InternalDB {
       }
       this.tasks[existingIndex] = updatedTask
       await this.saveTasks()
-      console.log('📝 Updated existing task in internal DB:', updatedTask.name)
+      // console.log('📝 Updated existing task in internal DB:', updatedTask.name)
       return updatedTask
     } else {
       // Create new task
@@ -186,7 +186,7 @@ export class InternalDB {
       
       this.tasks.push(newTask)
       await this.saveTasks()
-      console.log('➕ Added new task to internal DB:', newTask.name)
+      // console.log('➕ Added new task to internal DB:', newTask.name)
       return newTask
     }
   }
@@ -195,7 +195,7 @@ export class InternalDB {
   async clearAllTasks(): Promise<void> {
     this.tasks = []
     await this.saveTasks()
-    console.log('🧹 Cleared all tasks from internal DB')
+    // console.log('🧹 Cleared all tasks from internal DB')
   }
 
   // Get tasks within a time range
@@ -282,10 +282,10 @@ export class InternalDB {
       const stored = await AsyncStorage.getItem(ACTIONS_STORAGE_KEY)
       if (stored) {
         this.actions = JSON.parse(stored)
-        console.log('📱 Loaded', this.actions.length, 'actions from internal DB')
+        // console.log('📱 Loaded', this.actions.length, 'actions from internal DB')
       } else {
         this.actions = []
-        console.log('📱 No actions found in internal DB, starting fresh')
+        // console.log('📱 No actions found in internal DB, starting fresh')
       }
       this.actionsLoaded = true
       return this.actions
@@ -301,7 +301,7 @@ export class InternalDB {
   private async saveActions(): Promise<void> {
     try {
       await AsyncStorage.setItem(ACTIONS_STORAGE_KEY, JSON.stringify(this.actions))
-      console.log('💾 Saved', this.actions.length, 'actions to internal DB')
+      // console.log('💾 Saved', this.actions.length, 'actions to internal DB')
     } catch (error) {
       console.error('❌ Error saving actions to internal DB:', error)
     }
@@ -320,7 +320,7 @@ export class InternalDB {
     this.actions.push(newAction)
     await this.saveActions()
     
-    console.log('📝 Added action to internal DB:', newAction.action_type, newAction.task_name)
+    // console.log('📝 Added action to internal DB:', newAction.action_type, newAction.task_name)
     return newAction
   }
 
@@ -334,7 +334,7 @@ export class InternalDB {
   async clearAllActions(): Promise<void> {
     this.actions = []
     await this.saveActions()
-    console.log('🧹 Cleared all actions from internal DB')
+    // console.log('🧹 Cleared all actions from internal DB')
   }
 
   // Get actions for a specific task

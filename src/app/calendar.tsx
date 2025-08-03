@@ -1,7 +1,7 @@
-import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View } from 'react-native';
+import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Text } from '@/components/Themed';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import ThemedIcon from '@/components/ThemedIcon';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -25,7 +25,7 @@ export default function CalendarScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showProcessingIndicator, setShowProcessingIndicator] = useState(false);
   const [tasks, setTasks] = useState<InternalTask[]>([]);
-  const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
+  const [viewMode, setViewMode] = useState<'month' | 'week' | '3day'>('month');
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -33,6 +33,14 @@ export default function CalendarScreen() {
     weekStart.setDate(today.getDate() - dayOfWeek);
     return weekStart;
   });
+  
+  const [current3DayStart, setCurrent3DayStart] = useState(() => {
+    const today = new Date();
+    // Start 3-day view from today
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  });
+  
+  const threeDayScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -56,11 +64,26 @@ export default function CalendarScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  // Scroll to middle period when 3-day view is active
+  useEffect(() => {
+    if (viewMode === '3day' && threeDayScrollRef.current) {
+      // Scroll to the middle period (index 2 out of 5 periods, which is period 0)
+      const screenWidth = Dimensions.get('window').width;
+      const middlePeriodIndex = 2;
+      setTimeout(() => {
+        threeDayScrollRef.current?.scrollTo({
+          x: middlePeriodIndex * screenWidth,
+          animated: false
+        });
+      }, 100);
+    }
+  }, [viewMode]);
+
   const loadTasks = async () => {
     try {
       const allTasks = await internalDB.getAllTasks();
-      // console.log('📅 Calendar: Loaded tasks:', allTasks.length);
-      // console.log('📅 Calendar: Task details:', allTasks.map(t => ({
+      // // console.log('📅 Calendar: Loaded tasks:', allTasks.length);
+      // // console.log('📅 Calendar: Task details:', allTasks.map(t => ({
       //   id: t.id,
       //   name: t.name,
       //   start: new Date(t.start_time).toLocaleString(),
@@ -71,6 +94,69 @@ export default function CalendarScreen() {
       console.error('Error loading tasks for calendar:', error);
     }
   };
+
+  // Helper function to determine task category from task name
+  const getTaskCategory = (taskName: string): string => {
+    const name = taskName.toLowerCase()
+    
+    // Work/Professional
+    if (name.includes('meeting') || name.includes('call') || name.includes('conference') || 
+        name.includes('presentation') || name.includes('project') || name.includes('work') ||
+        name.includes('email') || name.includes('report') || name.includes('team')) {
+      return 'work'
+    }
+    
+    // Exercise/Fitness
+    if (name.includes('gym') || name.includes('workout') || name.includes('run') || 
+        name.includes('exercise') || name.includes('yoga') || name.includes('swim') ||
+        name.includes('walk') || name.includes('fitness') || name.includes('training')) {
+      return 'exercise'
+    }
+    
+    // Personal/Errands
+    if (name.includes('grocery') || name.includes('shopping') || name.includes('errand') ||
+        name.includes('bank') || name.includes('appointment') || name.includes('dentist') ||
+        name.includes('doctor') || name.includes('laundry') || name.includes('cleaning')) {
+      return 'errands'
+    }
+    
+    // Social/Personal
+    if (name.includes('lunch') || name.includes('dinner') || name.includes('breakfast') ||
+        name.includes('coffee') || name.includes('friend') || name.includes('family') ||
+        name.includes('date') || name.includes('party') || name.includes('birthday')) {
+      return 'social'
+    }
+    
+    // Health/Self-care
+    if (name.includes('shower') || name.includes('meditation') || name.includes('sleep') ||
+        name.includes('rest') || name.includes('relax') || name.includes('break')) {
+      return 'selfcare'
+    }
+    
+    // Travel
+    if (name.includes('flight') || name.includes('trip') || name.includes('travel') ||
+        name.includes('airport') || name.includes('pack') || name.includes('hotel')) {
+      return 'travel'
+    }
+    
+    // Default
+    return 'other'
+  }
+  
+  // Helper function to get category color
+  const getCategoryColor = (category: string): string => {
+    const categoryColors = {
+      work: '#3B82F6',      // Blue
+      exercise: '#10B981',  // Green
+      errands: '#F59E0B',   // Amber
+      social: '#EC4899',    // Pink
+      selfcare: '#8B5CF6', // Purple
+      travel: '#EF4444',    // Red
+      other: '#6B7280'      // Gray
+    }
+    
+    return categoryColors[category] || categoryColors.other
+  }
 
   // Helper function to check if a specific date has tasks
   const hasTasksOnDate = (date: Date): boolean => {
@@ -93,7 +179,7 @@ export default function CalendarScreen() {
       
       // Debug logging for today's tasks - DISABLED
       // if (isToday && tasks.length > 0) {
-      //   console.log('📅 Calendar: Task date check:', {
+      //   // console.log('📅 Calendar: Task date check:', {
       //     taskName: task.name,
       //     taskDate: taskDateStr,
       //     targetDate: dateStr,
@@ -105,7 +191,7 @@ export default function CalendarScreen() {
     });
     
     // if (isToday && filteredTasks.length === 0 && tasks.length > 0) {
-    //   console.log('📅 Calendar: No tasks found for today, but tasks exist:', tasks.length);
+    //   // console.log('📅 Calendar: No tasks found for today, but tasks exist:', tasks.length);
     // }
     
     return filteredTasks;
@@ -170,8 +256,29 @@ export default function CalendarScreen() {
     return days;
   };
 
+  const get3DayPeriods = () => {
+    const periods = [];
+    // Generate 5 periods (15 days total) for scrolling
+    for (let period = -2; period <= 2; period++) {
+      const periodDays = [];
+      for (let i = 0; i < 3; i++) {
+        const day = new Date(current3DayStart);
+        day.setDate(current3DayStart.getDate() + (period * 3) + i);
+        periodDays.push(day);
+      }
+      periods.push(periodDays);
+    }
+    return periods;
+  };
+
   const toggleViewMode = () => {
-    setViewMode(viewMode === 'month' ? 'week' : 'month');
+    if (viewMode === 'month') {
+      setViewMode('week');
+    } else if (viewMode === 'week') {
+      setViewMode('3day');
+    } else {
+      setViewMode('month');
+    }
   };
 
   const handleQuickAddTask = () => {
@@ -217,19 +324,19 @@ export default function CalendarScreen() {
     try {
       // HARDCODED FUNCTIONALITY - Handle specific prompts locally
       const promptText = taskInputText.trim().toLowerCase()
-      console.log('🎯 Calendar: Processing prompt:', promptText)
+      // console.log('🎯 Calendar: Processing prompt:', promptText)
       
       if (promptText.includes('delete tasks for saturday')) {
-        console.log('🎯 Calendar: Hardcoded response - Deleting all Saturday tasks...')
+        // console.log('🎯 Calendar: Hardcoded response - Deleting all Saturday tasks...')
         
         // Get all tasks and filter for ANY Saturday
         const allTasks = await internalDB.getAllTasks()
-        console.log(`🎯 Calendar: Total tasks in database: ${allTasks.length}`)
+        // console.log(`🎯 Calendar: Total tasks in database: ${allTasks.length}`)
         
         // Debug: Show all tasks with their dates
         allTasks.forEach(task => {
           const taskDate = new Date(task.start_time)
-          console.log(`🎯 Calendar: Task: ${task.name} - Date: ${taskDate.toDateString()} - Day: ${taskDate.getDay()}`)
+          // console.log(`🎯 Calendar: Task: ${task.name} - Date: ${taskDate.toDateString()} - Day: ${taskDate.getDay()}`)
         })
         
         const saturdayTasks = allTasks.filter(task => {
@@ -238,7 +345,7 @@ export default function CalendarScreen() {
           return taskStart.getDay() === 6
         })
         
-        console.log(`🎯 Calendar: Found ${saturdayTasks.length} Saturday tasks to delete across all weeks`)
+        // console.log(`🎯 Calendar: Found ${saturdayTasks.length} Saturday tasks to delete across all weeks`)
         
         if (saturdayTasks.length === 0) {
           Alert.alert(
@@ -255,7 +362,7 @@ export default function CalendarScreen() {
         // Delete each Saturday task
         let deletedCount = 0
         for (const task of saturdayTasks) {
-          console.log(`🎯 Calendar: Deleting task: ${task.name}`)
+          // console.log(`🎯 Calendar: Deleting task: ${task.name}`)
           const success = await internalDB.deleteTask(task.id)
           if (success) {
             deletedCount++
@@ -281,7 +388,7 @@ export default function CalendarScreen() {
       
       // Handle phone call with Shanghai scheduling
       if (promptText.includes('phone call') && promptText.includes('shanghai')) {
-        console.log('🎯 Calendar: Hardcoded response - Scheduling phone call with Shanghai at 4pm...')
+        // console.log('🎯 Calendar: Hardcoded response - Scheduling phone call with Shanghai at 4pm...')
         
         // Extract the day from the prompt (default to tomorrow if not specified)
         let targetDate = new Date()
@@ -337,7 +444,7 @@ export default function CalendarScreen() {
         
         const taskName = `Phone call with ${callWith} in Shanghai`
         
-        console.log(`🎯 Calendar: Creating task: ${taskName} on ${targetDate.toDateString()} at 4pm`)
+        // console.log(`🎯 Calendar: Creating task: ${taskName} on ${targetDate.toDateString()} at 4pm`)
         
         try {
           await internalDB.addTaskWithDuration(
@@ -392,21 +499,21 @@ export default function CalendarScreen() {
         finalPrompt = `On ${dateStr}: ${finalPrompt}`;
       }
 
-      console.log('🔍 Saving prompt for calendar date:', dateStr);
+      // console.log('🔍 Saving prompt for calendar date:', dateStr);
       const promptData = {
         user_id: session.user.id,
         prompt_text: finalPrompt
       };
       
-      console.log('🔍 About to insert into public.user_prompt table...')
-      console.log('🔍 Prompt data:', promptData)
+      // console.log('🔍 About to insert into public.user_prompt table...')
+      // console.log('🔍 Prompt data:', promptData)
       
       const { data, error } = await supabase
         .from('user_prompt')
         .insert(promptData)
         .select(); // Add select to return inserted data
         
-      console.log('🔍 Insert response - data:', data, 'error:', error)
+      // console.log('🔍 Insert response - data:', data, 'error:', error)
 
       if (error) {
         console.error('❌ Error saving prompt:', error);
@@ -419,8 +526,8 @@ export default function CalendarScreen() {
         return;
       }
 
-      console.log('✅ Prompt saved successfully to public.user_prompt!');
-      console.log('✅ Inserted data:', data);
+      // console.log('✅ Prompt saved successfully to public.user_prompt!');
+      // console.log('✅ Inserted data:', data);
       
       Alert.alert(
         'Success',
@@ -665,6 +772,117 @@ export default function CalendarScreen() {
     );
   };
 
+  const render3DayView = () => {
+    const threeDayPeriods = get3DayPeriods();
+    
+    return (
+      <ScrollView 
+        ref={threeDayScrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        style={styles.threeDayScrollView}
+        contentContainerStyle={styles.threeDayScrollContent}
+      >
+        {threeDayPeriods.map((threeDays, periodIndex) => (
+          <View key={periodIndex} style={styles.threeDayContainer}>
+            {threeDays.map((day, index) => {
+            const isToday = 
+              day.getDate() === new Date().getDate() && 
+              day.getMonth() === new Date().getMonth() && 
+              day.getFullYear() === new Date().getFullYear();
+
+            const isSelected = 
+              day.getDate() === selectedDate.getDate() &&
+              day.getMonth() === selectedDate.getMonth() &&
+              day.getFullYear() === selectedDate.getFullYear();
+              
+            const hasTasks = hasTasksOnDate(day);
+            const dayTasks = getTasksForDate(day);
+            
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.threeDayCell,
+                  isToday && styles.todayCell,
+                  isSelected && styles.selectedCell,
+                  isSelected && { backgroundColor: colors.tint },
+                ]}
+                onPress={() => setSelectedDate(day)}
+              >
+                <View style={styles.threeDayContent}>
+                  <Text style={[
+                    styles.threeDayDayLabel,
+                    { color: isSelected ? '#fff' : colors.textSecondary }
+                  ]}>
+                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                  </Text>
+                  
+                  <Text style={[
+                    styles.threeDayNumber,
+                    isToday && { color: colors.tint },
+                    isSelected && { color: '#fff' },
+                    { color: isSelected ? '#fff' : (isToday ? colors.tint : colors.text) }
+                  ]}>
+                    {day.getDate()}
+                  </Text>
+                  
+                  {day.getDate() === 1 && (
+                    <Text style={[
+                      styles.threeDayMonthLabel,
+                      { color: isSelected ? '#fff' : colors.textSecondary }
+                    ]}>
+                      {day.toLocaleDateString('en-US', { month: 'short' })}
+                    </Text>
+                  )}
+                  
+                  {/* Task list for 3-day view */}
+                  {hasTasks && (
+                    <View style={styles.threeDayTasks}>
+                      {dayTasks.slice(0, 3).map((task, taskIndex) => (
+                        <View 
+                          key={task.id} 
+                          style={[
+                            styles.threeDayTaskItem,
+                            {
+                              backgroundColor: isSelected && task.status === 'pending' ? 
+                                             'rgba(255,255,255,0.3)' : 
+                                             getPriorityColor(task, colors.tint) + '30',
+                            }
+                          ]}
+                        >
+                          <Text 
+                            style={[
+                              styles.threeDayTaskText,
+                              { color: isSelected ? '#fff' : colors.text }
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {task.name}
+                          </Text>
+                        </View>
+                      ))}
+                      {dayTasks.length > 3 && (
+                        <Text style={[
+                          styles.threeDayMoreTasks,
+                          { color: isSelected ? '#fff' : colors.textSecondary }
+                        ]}>
+                          +{dayTasks.length - 3} more
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+          </View>
+        ))}
+      </ScrollView>
+    );
+  };
+
   return (
     <ThemedGradient style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
@@ -735,7 +953,7 @@ export default function CalendarScreen() {
               style={[styles.viewToggle, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
             >
               <Text style={[styles.viewToggleText, { color: colors.text }]}>
-                {viewMode === 'month' ? 'Week' : 'Month'}
+                {viewMode === 'month' ? 'Week' : viewMode === 'week' ? '3 Day' : 'Month'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -767,10 +985,12 @@ export default function CalendarScreen() {
           <View style={styles.calendarGrid}>
             {renderCalendarDays()}
           </View>
-        ) : (
+        ) : viewMode === 'week' ? (
           renderWeekView()
-        )}
+        ) : null}
       </GlassMorphism>
+      
+      {viewMode === '3day' && render3DayView()}
 
       <GlassMorphism intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} style={styles.tasksSection} borderRadius={20}>
           <GlassMorphism 
@@ -801,9 +1021,7 @@ export default function CalendarScreen() {
                     styles.taskItem, 
                     { 
                       backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)',
-                      borderLeftColor: task.status === 'completed' ? '#4CAF50' :
-                                      task.status === 'in_progress' ? '#FFA726' :
-                                      colors.tint,
+                      borderLeftColor: getCategoryColor(getTaskCategory(task.name)),
                     }
                   ]}
                 >
@@ -1467,6 +1685,70 @@ const styles = StyleSheet.create({
   weekMoreTasks: {
     fontSize: 10,
     fontWeight: '600',
+    marginTop: 4,
+  },
+  // 3-day view styles
+  threeDayScrollView: {
+    flex: 1,
+    marginTop: 8,
+  },
+  threeDayScrollContent: {
+    flexGrow: 1,
+  },
+  threeDayContainer: {
+    width: Dimensions.get('window').width,
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  threeDayCell: {
+    flex: 1,
+    marginHorizontal: 4,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    minHeight: 400,
+  },
+  threeDayContent: {
+    flex: 1,
+  },
+  threeDayDayLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  threeDayNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  threeDayMonthLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 12,
+    textAlign: 'center',
+    opacity: 0.7,
+  },
+  threeDayTasks: {
+    marginTop: 12,
+    gap: 6,
+  },
+  threeDayTaskItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  threeDayTaskText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  threeDayMoreTasks: {
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
     marginTop: 4,
   },
 });
