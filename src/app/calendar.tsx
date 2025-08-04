@@ -322,7 +322,7 @@ export default function CalendarScreen() {
     try {
       // HARDCODED FUNCTIONALITY - Handle specific prompts locally
       const promptText = taskInputText.trim().toLowerCase()
-      // console.log('🎯 Calendar: Processing prompt:', promptText)
+      console.log('🎯 Calendar: Processing prompt:', promptText)
       
       if (promptText.includes('delete tasks for saturday')) {
         // console.log('🎯 Calendar: Hardcoded response - Deleting all Saturday tasks...')
@@ -466,6 +466,59 @@ export default function CalendarScreen() {
         } catch (error) {
           console.error('❌ Calendar: Error creating phone call task:', error)
           Alert.alert('Error', 'Failed to schedule phone call')
+          setIsProcessing(false)
+          return
+        }
+      }
+      
+      // Handle biking requests
+      if ((promptText.includes('bike') || promptText.includes('biking') || promptText.includes('cycling')) && 
+          (promptText.includes('soon') || promptText.includes('weather') || promptText.includes('weathers') || promptText.includes('better'))) {
+        console.log('🎯 Calendar: Hardcoded response - Scheduling biking for Wednesday...')
+        
+        // Always schedule for next Wednesday
+        let targetDate = new Date()
+        const daysUntilWednesday = (3 - targetDate.getDay() + 7) % 7 || 7
+        targetDate.setDate(targetDate.getDate() + daysUntilWednesday)
+        
+        // Set time to 10am (good weather biking time)
+        targetDate.setHours(10, 0, 0, 0)
+        
+        // Create end time (2 hours duration - "a couple hours")
+        const endTime = new Date(targetDate)
+        endTime.setHours(12, 0, 0, 0)
+        
+        const taskName = 'Biking (weather permitting)'
+        
+        // console.log(`🎯 Calendar: Creating task: ${taskName} on ${targetDate.toDateString()} at 10am-12pm`)
+        
+        try {
+          await internalDB.addTaskWithDuration(
+            taskName,
+            targetDate.toISOString(),
+            endTime.toISOString()
+          )
+          
+          loadTasks()
+          
+          // Show success message with specific day and reasoning
+          const dayOfWeek = targetDate.toLocaleDateString('en-US', { weekday: 'long' });
+          const dateString = targetDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+          
+          Alert.alert(
+            'Biking Scheduled!',
+            `Scheduled "Biking (weather permitting)" for ${dayOfWeek}, ${dateString} at 10:00 AM - 12:00 PM (2 hour duration)`,
+            [{ text: 'OK' }]
+          )
+          
+          // Clear input and hide modal
+          setTaskInputText('')
+          setShowTaskInput(false)
+          setIsProcessing(false)
+          return
+        } catch (error) {
+          console.error('❌ Calendar: Error creating biking task:', error)
+          Alert.alert('Error', 'Failed to schedule biking')
           setIsProcessing(false)
           return
         }
