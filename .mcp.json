@@ -24,6 +24,20 @@
         "-y",
         "@twodoorsdev/react-native-debugger-mcp"
       ]
+    },
+    "serena": {
+      "command": "/Users/alexpro/.local/bin/uv",
+      "args": [
+        "run",
+        "--directory",
+        "/Users/alexpro/projects/sked_ai_mobile/src/serena",
+        "serena",
+        "start-mcp-server",
+        "--context",
+        "ide-assistant",
+        "--project",
+        "/Users/alexpro/projects/sked_ai_mobile"
+      ]
     }
   }
 }
