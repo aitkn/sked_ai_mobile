@@ -882,6 +882,150 @@ export default function DevScreen() {
     }
   }
 
+  const testGoogleMapsAddress = async () => {
+    try {
+      setLoading(true)
+      
+      // Configurable search parameters
+      const searchConfig = {
+        centerLocation: "San Diego, CA",
+        radiusInMiles: 5,
+        placeTypes: ['grocery_or_supermarket', 'pharmacy', 'gym'],
+        maxResults: 10,
+        minRating: 3.5,
+      }
+      
+      console.log('🗺️ Testing Google Maps API with search parameters:', searchConfig)
+      
+      const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchConfig.centerLocation)}&key=AIzaSyCdYJqoDfWWFNq-sX9WUaE-IyPWL87N07A`
+      
+      const geocodeResponse = await fetch(geocodeUrl)
+      const geocodeData = await geocodeResponse.json()
+      
+      if (geocodeData.status !== 'OK' || !geocodeData.results?.[0]) {
+        throw new Error(`Failed to geocode center location: ${geocodeData.status}`)
+      }
+      
+      const centerCoords = geocodeData.results[0].geometry.location
+      console.log('📍 Center coordinates:', centerCoords)
+      
+      const radiusInMeters = searchConfig.radiusInMiles * 1609.34
+      
+      let allResults: any[] = []
+      
+      for (const placeType of searchConfig.placeTypes) {
+        console.log(`🔍 Searching for ${placeType}...`)
+        
+        const nearbySearchUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
+          `location=${centerCoords.lat},${centerCoords.lng}` +
+          `&radius=${radiusInMeters}` +
+          `&type=${placeType}` +
+          `&key=AIzaSyCdYJqoDfWWFNq-sX9WUaE-IyPWL87N07A`
+        
+        const nearbyResponse = await fetch(nearbySearchUrl)
+        const nearbyData = await nearbyResponse.json()
+        
+        if (nearbyData.status === 'OK' && nearbyData.results) {
+          const resultsWithDistance = nearbyData.results.map((place: any) => {
+            const distance = calculateDistance(
+              centerCoords.lat,
+              centerCoords.lng,
+              place.geometry.location.lat,
+              place.geometry.location.lng
+            )
+            
+            return {
+              ...place,
+              distance: distance,
+              searchType: placeType
+            }
+          })
+          
+          allResults = [...allResults, ...resultsWithDistance]
+        }
+      }
+      
+      if (searchConfig.minRating) {
+        allResults = allResults.filter(place => 
+          !place.rating || place.rating >= searchConfig.minRating
+        )
+      }
+      
+      allResults.sort((a, b) => {
+        const scoreA = (a.distance * 0.7) - ((a.rating || 3) * 0.3)
+        const scoreB = (b.distance * 0.7) - ((b.rating || 3) * 0.3)
+        return scoreA - scoreB
+      })
+      
+      const topResults = allResults.slice(0, searchConfig.maxResults)
+      
+      console.log(`Found ${allResults.length} total places, showing top ${topResults.length}`)
+      
+      let alertMessage = `Search Center: ${searchConfig.centerLocation}\n` +
+        `Radius: ${searchConfig.radiusInMiles} miles\n` +
+        `Types: ${searchConfig.placeTypes.join(', ')}\n` +
+        `Min Rating: ${searchConfig.minRating || 'None'}\n\n` +
+        `Top ${topResults.length} Results:\n\n`
+      
+      topResults.forEach((place, index) => {
+        alertMessage += `${index + 1}. ${place.name}\n` +
+          `   Type: ${place.searchType.replace(/_/g, ' ')}\n` +
+          `   Distance: ${place.distance.toFixed(2)} miles\n` +
+          `   Rating: ${place.rating ? `${place.rating} ⭐ (${place.user_ratings_total || 0} reviews)` : 'No rating'}\n` +
+          `   Address: ${place.vicinity || 'Unknown'}\n` +
+          `   ${place.opening_hours?.open_now !== undefined ? `Open Now: ${place.opening_hours.open_now ? 'Yes' : 'No'}` : ''}\n\n`
+      })
+      
+      Alert.alert('Google Maps Search Results', alertMessage, [{ text: 'OK' }])
+      
+      const result = {
+        searchConfig,
+        centerCoords,
+        totalResults: allResults.length,
+        topResults: topResults.map(place => ({
+          name: place.name,
+          type: place.searchType,
+          distance: place.distance,
+          rating: place.rating,
+          address: place.vicinity,
+          placeId: place.place_id,
+          isOpen: place.opening_hours?.open_now,
+          location: place.geometry.location
+        }))
+      }
+      
+      console.log('Search results:', result)
+      return result
+      
+    } catch (error: any) {
+      console.error('Google Maps API Error:', error)
+      Alert.alert(
+        'Google Maps API Error',
+        `Failed to search places: ${error.message || 'Unknown error'}\n\nCheck the console for details.`,
+        [{ text: 'OK' }]
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  // Calculate distance between two coordinates
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 3959
+    const dLat = toRad(lat2 - lat1)
+    const dLon = toRad(lon2 - lon1)
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  }
+  
+  const toRad = (deg: number): number => {
+    return deg * (Math.PI / 180)
+  }
+
   const handleImportTimeline = async () => {
     // DISABLED FOR MOCK MODE
     Alert.alert(
@@ -1007,6 +1151,17 @@ export default function DevScreen() {
             <FontAwesome name="plus" size={16} color="#fff" />
             <Text style={styles.buttonText}>
               {loading ? 'Creating...' : 'Add Test Task'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.button, { backgroundColor: colors.tint }, loading && styles.disabledButton]} 
+            onPress={testGoogleMapsAddress}
+            disabled={loading}
+          >
+            <FontAwesome name="plus" size={16} color="#fff" />
+            <Text style={styles.buttonText}>
+              {loading ? 'Requesting...' : 'Test Google Maps Address'}
             </Text>
           </TouchableOpacity>
           
