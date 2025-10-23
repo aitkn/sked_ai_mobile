@@ -431,6 +431,230 @@ export default function DevScreen() {
     )
   }
 
+  // Delete individual task
+  const handleDeleteTask = async (taskId: string, taskName: string) => {
+    if (typeof window !== 'undefined') {
+      if (window.confirm(`Are you sure you want to delete "${taskName}"?`)) {
+        try {
+          setLoading(true)
+          await internalDB.deleteTask(taskId)
+          await loadTasks()
+          await loadActions()
+          window.alert(`Task "${taskName}" deleted successfully.`)
+        } catch (error: any) {
+          window.alert(`Failed to delete task: ${error.message}`)
+        } finally {
+          setLoading(false)
+        }
+      }
+    } else {
+      Alert.alert(
+        'Delete Task',
+        `Are you sure you want to delete "${taskName}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setLoading(true)
+                await internalDB.deleteTask(taskId)
+                await loadTasks()
+                await loadActions()
+                Alert.alert('Success', `Task "${taskName}" deleted successfully.`)
+              } catch (error: any) {
+                Alert.alert('Error', `Failed to delete task: ${error.message}`)
+              } finally {
+                setLoading(false)
+              }
+            }
+          }
+        ]
+      )
+    }
+  }
+
+  // Modify task times
+  const handleModifyTaskTimes = async (task: InternalTask) => {
+    if (typeof window !== 'undefined') {
+      const currentStart = new Date(task.start_time)
+      const currentEnd = new Date(task.end_time)
+      
+      const choice = window.confirm(
+        `Modify times for "${task.name}"\n\nCurrent times:\nStart: ${currentStart.toLocaleString()}\nEnd: ${currentEnd.toLocaleString()}\n\nClick OK to add 5 minutes, Cancel to subtract 5 minutes`
+      )
+      
+      try {
+        setLoading(true)
+        const newStart = new Date(currentStart.getTime() + (choice ? 5 : -5) * 60 * 1000)
+        const newEnd = new Date(currentEnd.getTime() + (choice ? 5 : -5) * 60 * 1000)
+        
+        await internalDB.updateTask(task.id, {
+          start_time: newStart.toISOString(),
+          end_time: newEnd.toISOString(),
+          duration: InternalDB.calculateDuration(newStart.toISOString(), newEnd.toISOString())
+        })
+        
+        await loadTasks()
+        window.alert(`Task times updated (${choice ? '+5' : '-5'} minutes)`)
+      } catch (error: any) {
+        window.alert(`Failed to update task times: ${error.message}`)
+      } finally {
+        setLoading(false)
+      }
+    } else {
+      Alert.alert(
+        'Modify Task Times',
+        `Modify times for "${task.name}"`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Modify',
+            onPress: () => {
+              const currentStart = new Date(task.start_time)
+              const currentEnd = new Date(task.end_time)
+              
+              Alert.alert(
+                'Current Times',
+                `Start: ${currentStart.toLocaleString()}\nEnd: ${currentEnd.toLocaleString()}`,
+                [
+                  { text: 'OK' },
+                  {
+                    text: 'Quick +5min',
+                    onPress: async () => {
+                      try {
+                        setLoading(true)
+                        const newStart = new Date(currentStart.getTime() + 5 * 60 * 1000)
+                        const newEnd = new Date(currentEnd.getTime() + 5 * 60 * 1000)
+                        
+                        await internalDB.updateTask(task.id, {
+                          start_time: newStart.toISOString(),
+                          end_time: newEnd.toISOString(),
+                          duration: InternalDB.calculateDuration(newStart.toISOString(), newEnd.toISOString())
+                        })
+                        
+                        await loadTasks()
+                        Alert.alert('Success', 'Task times updated (+5 minutes)')
+                      } catch (error: any) {
+                        Alert.alert('Error', `Failed to update task times: ${error.message}`)
+                      } finally {
+                        setLoading(false)
+                      }
+                    }
+                  },
+                  {
+                    text: 'Quick -5min',
+                    onPress: async () => {
+                      try {
+                        setLoading(true)
+                        const newStart = new Date(currentStart.getTime() - 5 * 60 * 1000)
+                        const newEnd = new Date(currentEnd.getTime() - 5 * 60 * 1000)
+                        
+                        await internalDB.updateTask(task.id, {
+                          start_time: newStart.toISOString(),
+                          end_time: newEnd.toISOString(),
+                          duration: InternalDB.calculateDuration(newStart.toISOString(), newEnd.toISOString())
+                        })
+                        
+                        await loadTasks()
+                        Alert.alert('Success', 'Task times updated (-5 minutes)')
+                      } catch (error: any) {
+                        Alert.alert('Error', `Failed to update task times: ${error.message}`)
+                      } finally {
+                        setLoading(false)
+                      }
+                    }
+                  }
+                ]
+              )
+            }
+          }
+        ]
+      )
+    }
+  }
+
+  // Bulk delete completed tasks
+  const handleBulkDeleteCompleted = async () => {
+    const completedTasks = await internalDB.getTasksByStatus('completed')
+    
+    if (completedTasks.length === 0) {
+      Alert.alert('No Completed Tasks', 'There are no completed tasks to delete.')
+      return
+    }
+
+    Alert.alert(
+      'Delete Completed Tasks',
+      `Delete ${completedTasks.length} completed tasks?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true)
+              const taskIds = completedTasks.map(task => task.id)
+              const deletedCount = await internalDB.deleteMultipleTasks(taskIds)
+              await loadTasks()
+              await loadActions()
+              Alert.alert('Success', `Deleted ${deletedCount} completed tasks.`)
+            } catch (error: any) {
+              console.error('Error bulk deleting tasks:', error)
+              Alert.alert('Error', `Failed to delete tasks: ${error.message}`)
+            } finally {
+              setLoading(false)
+            }
+          }
+        }
+      ]
+    )
+  }
+
+  // Bulk update task status
+  const handleBulkUpdateStatus = async (newStatus: InternalTask['status']) => {
+    const pendingTasks = await internalDB.getTasksByStatus('pending')
+    
+    if (pendingTasks.length === 0) {
+      Alert.alert('No Pending Tasks', 'There are no pending tasks to update.')
+      return
+    }
+
+    Alert.alert(
+      'Update Task Status',
+      `Update ${pendingTasks.length} pending tasks to ${newStatus}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Update All',
+          onPress: async () => {
+            try {
+              setLoading(true)
+              const updates = pendingTasks.map(task => ({
+                id: task.id,
+                updates: { 
+                  status: newStatus,
+                  ...(newStatus === 'completed' && { completed_at: new Date().toISOString() })
+                }
+              }))
+              
+              await internalDB.updateMultipleTasks(updates)
+              await loadTasks()
+              await loadActions()
+              Alert.alert('Success', `Updated ${pendingTasks.length} tasks to ${newStatus}.`)
+            } catch (error: any) {
+              console.error('Error bulk updating tasks:', error)
+              Alert.alert('Error', `Failed to update tasks: ${error.message}`)
+            } finally {
+              setLoading(false)
+            }
+          }
+        }
+      ]
+    )
+  }
+
   const handleResetStaleTasks = async () => {
     Alert.alert(
       'Reset Stale Tasks',
@@ -941,6 +1165,103 @@ export default function DevScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Test Task Management</Text>
+          <Text style={styles.sectionDescription}>
+            Manage individual test tasks with enhanced flexibility
+          </Text>
+          
+          
+          {tasks.length > 0 ? (
+            <View style={styles.tasksContainer}>
+              {tasks.slice(0, 5).map((task) => (
+                <View key={task.id} style={[styles.taskCard, { backgroundColor: colors.cardBackground, borderColor: colors.borderColor }]}>
+                  <View style={styles.taskHeader}>
+                    <Text style={[styles.taskName, { color: colors.text }]}>{task.name}</Text>
+                    <View style={styles.taskStatus}>
+                      <Text style={[styles.statusBadge, { 
+                        backgroundColor: task.status === 'completed' ? '#4CAF50' : 
+                                       task.status === 'in_progress' ? '#FF9800' : '#2196F3',
+                        color: '#fff'
+                      }]}>
+                        {task.status.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                
+                  <View style={styles.taskTimes}>
+                    <Text style={[styles.taskTime, { color: colors.textSecondary }]}>
+                      Start: {new Date(task.start_time).toLocaleString()}
+                    </Text>
+                    <Text style={[styles.taskTime, { color: colors.textSecondary }]}>
+                      End: {new Date(task.end_time).toLocaleString()}
+                    </Text>
+                    <Text style={[styles.taskDuration, { color: colors.textSecondary }]}>
+                      Duration: {Math.round(task.duration / 60)} minutes
+                    </Text>
+                  </View>
+                
+                  <View style={styles.taskActions}>
+                    <TouchableOpacity
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#2196F3',
+                        padding: 12,
+                        borderRadius: 8,
+                        marginRight: 8,
+                        alignItems: 'center'
+                      }}
+                      onPress={() => {
+                        if (typeof window !== 'undefined') {
+                          window.alert(`Modify times for ${task.name}`)
+                        } else {
+                          Alert.alert('Modify', `Modify times for ${task.name}`)
+                        }
+                        handleModifyTaskTimes(task)
+                      }}
+                    >
+                      <Text style={{ color: 'white', fontWeight: 'bold' }}>MODIFY</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={{
+                        flex: 1,
+                        backgroundColor: '#f44336',
+                        padding: 12,
+                        borderRadius: 8,
+                        marginLeft: 8,
+                        alignItems: 'center'
+                      }}
+                      onPress={() => {
+                        if (typeof window !== 'undefined') {
+                          window.alert(`Delete ${task.name}`)
+                        } else {
+                          Alert.alert('Delete', `Delete ${task.name}`)
+                        }
+                        handleDeleteTask(task.id, task.name)
+                      }}
+                    >
+                      <Text style={{ color: 'white', fontWeight: 'bold' }}>DELETE</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+              
+              {tasks.length > 5 && (
+                <Text style={[styles.moreTasksText, { color: colors.textSecondary }]}>
+                  ... and {tasks.length - 5} more tasks
+                </Text>
+              )}
+            </View>
+          ) : (
+            <View style={styles.noTasksCard}>
+              <Text style={[styles.noTasksText, { color: colors.textSecondary }]}>
+                No test tasks found. Create some tasks to manage them here.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data Management</Text>
           <Text style={styles.sectionDescription}>
             Tools for managing local task data and testing
@@ -976,6 +1297,46 @@ export default function DevScreen() {
             <FontAwesome name="database" size={16} color={colors.textSecondary} />
             <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
               {loading ? 'Testing...' : 'Test Database Connection'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Bulk Operations</Text>
+          <Text style={styles.sectionDescription}>
+            Perform bulk operations on test tasks for enhanced flexibility
+          </Text>
+          
+          <TouchableOpacity 
+            style={[styles.button, styles.secondaryButton, loading && styles.disabledButton]} 
+            onPress={handleBulkDeleteCompleted}
+            disabled={loading}
+          >
+            <FontAwesome name="trash-o" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
+              {loading ? 'Processing...' : 'Delete Completed Tasks'}
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.button, styles.secondaryButton, loading && styles.disabledButton]} 
+            onPress={() => handleBulkUpdateStatus('completed')}
+            disabled={loading}
+          >
+            <FontAwesome name="check-circle" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
+              {loading ? 'Processing...' : 'Mark All Pending as Completed'}
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.button, styles.secondaryButton, loading && styles.disabledButton]} 
+            onPress={() => handleBulkUpdateStatus('cancelled')}
+            disabled={loading}
+          >
+            <FontAwesome name="times-circle" size={16} color={colors.textSecondary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
+              {loading ? 'Processing...' : 'Cancel All Pending Tasks'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1392,5 +1753,108 @@ const styles = StyleSheet.create({
   },
   notificationTime: {
     fontSize: 12,
+  },
+  // New styles for task management
+  tasksContainer: {
+    marginTop: 16,
+  },
+  taskCard: {
+    backgroundColor: 'transparent',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+    // Ensure touch events work
+    overflow: 'visible',
+  },
+  taskHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  taskName: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  taskStatus: {
+    flexDirection: 'row',
+  },
+  statusBadge: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    textAlign: 'center',
+    minWidth: 60,
+  },
+  taskTimes: {
+    marginBottom: 12,
+  },
+  taskTime: {
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  taskDuration: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  taskActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+    minHeight: 40, // Ensure minimum touch target
+  },
+  modifyButton: {
+    borderColor: '#2196F3',
+    backgroundColor: 'rgba(33, 150, 243, 0.1)',
+  },
+  deleteButton: {
+    borderColor: '#f44336',
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+  },
+  actionButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  noTasksCard: {
+    backgroundColor: 'transparent',
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+  noTasksText: {
+    fontSize: 14,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  moreTasksText: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
 })
