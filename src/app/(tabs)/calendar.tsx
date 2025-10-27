@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View } from 'react-native';
+import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View, Pressable } from 'react-native';
 import { Text } from '@/components/Themed';
 import { useState, useEffect } from 'react';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
@@ -22,13 +22,18 @@ export default function CalendarScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showProcessingIndicator, setShowProcessingIndicator] = useState(false);
   const [tasks, setTasks] = useState<InternalTask[]>([]);
-  const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
+  const [selectedTask, setSelectedTask] = useState<InternalTask | null>(null);
+  const [viewMode, setViewMode] = useState<'month' | 'week' | '3day' | 'day'>('month');
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
     const today = new Date();
     const dayOfWeek = today.getDay();
     const weekStart = new Date(today);
     weekStart.setDate(today.getDate() - dayOfWeek);
     return weekStart;
+  });
+  const [current3DayStart, setCurrent3DayStart] = useState(() => {
+    const today = new Date();
+    return new Date(today);
   });
 
   useEffect(() => {
@@ -157,6 +162,26 @@ export default function CalendarScreen() {
     setCurrentWeekStart(newWeekStart);
   };
 
+  const navigate3Day = (direction: 'prev' | 'next') => {
+    const new3DayStart = new Date(current3DayStart);
+    if (direction === 'prev') {
+      new3DayStart.setDate(new3DayStart.getDate() - 3);
+    } else {
+      new3DayStart.setDate(new3DayStart.getDate() + 3);
+    }
+    setCurrent3DayStart(new3DayStart);
+  };
+
+  const navigateDay = (direction: 'prev' | 'next') => {
+    const newSelectedDate = new Date(selectedDate);
+    if (direction === 'prev') {
+      newSelectedDate.setDate(newSelectedDate.getDate() - 1);
+    } else {
+      newSelectedDate.setDate(newSelectedDate.getDate() + 1);
+    }
+    setSelectedDate(newSelectedDate);
+  };
+
   const getWeekDays = () => {
     const days = [];
     for (let i = 0; i < 7; i++) {
@@ -167,13 +192,71 @@ export default function CalendarScreen() {
     return days;
   };
 
-  const toggleViewMode = () => {
-    setViewMode(viewMode === 'month' ? 'week' : 'month');
+  const get3DayDays = () => {
+    const days = [];
+    for (let i = 0; i < 3; i++) {
+      const day = new Date(current3DayStart);
+      day.setDate(current3DayStart.getDate() + i);
+      days.push(day);
+    }
+    return days;
+  };
+
+  const updateViewsForSelectedDate = (date: Date) => {
+    const dayOfWeek = date.getDay();
+    const weekStart = new Date(date);
+    weekStart.setDate(date.getDate() - dayOfWeek);
+    setCurrentWeekStart(weekStart);
+
+    setCurrent3DayStart(new Date(date));
+  };
+
+  const jumpToToday = () => {
+    const today = new Date();
+    setSelectedDate(today);
+    
+    setCurrentDate(today);
+    
+    updateViewsForSelectedDate(today);
   };
 
   const handleQuickAddTask = () => {
     setTaskInputText('');
     setShowTaskInput(true);
+  };
+
+  const handleTaskPress = (task: InternalTask) => {
+    setSelectedTask(task);
+  };
+
+  const closeTaskDetails = () => {
+    setSelectedTask(null);
+  };
+
+  const formatDateTime = (isoString: string) => {
+    const date = new Date(isoString);
+    return date.toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatDuration = (seconds: number) => {
+    if (!seconds || seconds <= 0) {
+      return 'Under 1m';
+    }
+    const totalMinutes = Math.round(seconds / 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const parts: string[] = [];
+    if (hours) parts.push(`${hours}h`);
+    if (minutes) parts.push(`${minutes}m`);
+    if (!parts.length) {
+      return 'Under 1m';
+    }
+    return parts.join(' ');
   };
 
   const handleVoiceInput = async () => {
@@ -324,6 +407,7 @@ export default function CalendarScreen() {
             const newSelected = new Date(currentDate);
             newSelected.setDate(day);
             setSelectedDate(newSelected);
+            updateViewsForSelectedDate(newSelected);
           }}
         >
           <View 
@@ -412,7 +496,11 @@ export default function CalendarScreen() {
               <TouchableOpacity
                 key={index}
                 style={styles.weekDayCell}
-                onPress={() => setSelectedDate(new Date(day))}
+                onPress={() => {
+                  const newDate = new Date(day);
+                  setSelectedDate(newDate);
+                  updateViewsForSelectedDate(newDate);
+                }}
               >
                 <View 
                   style={[
@@ -484,6 +572,116 @@ export default function CalendarScreen() {
     );
   };
 
+  const render3DayView = () => {
+    const threeDays = get3DayDays();
+    const dayLabels = threeDays.map(day => day.toLocaleDateString('en-US', { weekday: 'short' }));
+    
+    return (
+      <View style={styles.threeDayContainer}>
+        {/* 3-day headers */}
+        <View style={styles.threeDayHeaderRow}>
+          {dayLabels.map((label, index) => (
+            <View key={label} style={styles.threeDayHeaderCell}>
+              <Text style={[styles.threeDayHeaderText, { color: colors.text }]}>{label}</Text>
+            </View>
+          ))}
+        </View>
+        
+        {/* 3-day cells */}
+        <View style={styles.threeDayDaysRow}>
+          {threeDays.map((day, index) => {
+            const isToday = 
+              day.getDate() === new Date().getDate() && 
+              day.getMonth() === new Date().getMonth() && 
+              day.getFullYear() === new Date().getFullYear();
+
+            const isSelected = 
+              day.getDate() === selectedDate.getDate() && 
+              day.getMonth() === selectedDate.getMonth() && 
+              day.getFullYear() === selectedDate.getFullYear();
+
+            const hasTasks = hasTasksOnDate(day);
+            const dayTasks = getTasksForDate(day);
+
+            return (
+              <TouchableOpacity
+                key={index}
+                style={styles.threeDayCell}
+                onPress={() => {
+                  const newDate = new Date(day);
+                  setSelectedDate(newDate);
+                  updateViewsForSelectedDate(newDate);
+                }}
+              >
+                <View 
+                  style={[
+                    styles.threeDayCellContent,
+                    {
+                      backgroundColor: isSelected 
+                        ? colors.tint 
+                        : (isToday 
+                          ? actualTheme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(74,144,226,0.1)'
+                          : actualTheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.08)'
+                        ),
+                      borderColor: isSelected ? colors.tint : (isToday ? colors.tint + '80' : 'transparent'),
+                      borderWidth: isSelected || isToday ? 2 : 1,
+                    }
+                  ]}
+                >
+                  {/* Day number */}
+                  <Text style={[
+                    styles.threeDayNumber,
+                    { 
+                      color: isSelected ? '#fff' : colors.text,
+                      fontWeight: isToday ? '800' : '600' 
+                    }
+                  ]}>
+                    {day.getDate()}
+                  </Text>
+                  
+                  {/* Month label */}
+                  <Text style={[
+                    styles.threeDayMonthLabel,
+                    { color: isSelected ? '#fff' : colors.textSecondary }
+                  ]}>
+                    {day.toLocaleDateString('en-US', { month: 'short' })}
+                  </Text>
+                  
+                  {/* Task indicators */}
+                  {hasTasks && (
+                    <View style={styles.threeDayTaskIndicators}>
+                      {dayTasks.slice(0, 3).map((task, taskIndex) => (
+                        <View 
+                          key={task.id} 
+                          style={[
+                            styles.threeDayTaskDot,
+                            {
+                              backgroundColor: isSelected && task.status === 'pending' ? '#fff' : 
+                                             getPriorityColor(task, colors.tint),
+                            }
+                          ]} 
+                        />
+                      ))}
+                      {dayTasks.length > 3 && (
+                        <Text style={[
+                          styles.threeDayMoreTasks, 
+                          { color: isSelected ? '#fff' : colors.text }
+                        ]}>
+                          +{dayTasks.length - 3}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+
   return (
     <ThemedGradient style={styles.container}>
       {/* Processing Indicator */}
@@ -527,22 +725,112 @@ export default function CalendarScreen() {
                       month: 'long', 
                       year: 'numeric' 
                     })
-                  : `${currentWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(currentWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  : viewMode === 'week'
+                  ? `${currentWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(currentWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  : viewMode === '3day'
+                  ? `${current3DayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(current3DayStart.getTime() + 2 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                  : selectedDate.toLocaleDateString('en-US', { 
+                      month: 'long', 
+                      day: 'numeric',
+                      year: 'numeric'
+                    })
                 }
               </Text>
             </GlassMorphism>
+            <View style={styles.viewToggle}>
             <TouchableOpacity 
-              onPress={toggleViewMode}
-              style={[styles.viewToggle, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
-            >
-              <Text style={[styles.viewToggleText, { color: colors.text }]}>
-                {viewMode === 'month' ? 'Week' : 'Month'}
+                onPress={() => setViewMode('month')}
+                style={[
+                  styles.viewModeButton, 
+                  { 
+                    backgroundColor: viewMode === 'month' 
+                      ? colors.tint 
+                      : actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' 
+                  }
+                ]}
+              >
+                <Text style={[
+                  styles.viewToggleText, 
+                  { color: viewMode === 'month' ? '#fff' : colors.text }
+                ]}>
+                  Month
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                onPress={() => {
+                  setViewMode('week');
+                  updateViewsForSelectedDate(selectedDate);
+                }}
+                style={[
+                  styles.viewModeButton, 
+                  { 
+                    backgroundColor: viewMode === 'week' 
+                      ? colors.tint 
+                      : actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' 
+                  }
+                ]}
+              >
+                <Text style={[
+                  styles.viewToggleText, 
+                  { color: viewMode === 'week' ? '#fff' : colors.text }
+                ]}>
+                  Week
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                onPress={() => {
+                  setViewMode('3day');
+                  updateViewsForSelectedDate(selectedDate);
+                }}
+                style={[
+                  styles.viewModeButton, 
+                  { 
+                    backgroundColor: viewMode === '3day' 
+                      ? colors.tint 
+                      : actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' 
+                  }
+                ]}
+              >
+                <Text style={[
+                  styles.viewToggleText, 
+                  { color: viewMode === '3day' ? '#fff' : colors.text }
+                ]}>
+                  3-Day
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                onPress={() => setViewMode('day')}
+                style={[
+                  styles.viewModeButton, 
+                  { 
+                    backgroundColor: viewMode === 'day' 
+                      ? colors.tint 
+                      : actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' 
+                  }
+                ]}
+              >
+                <Text style={[
+                  styles.viewToggleText, 
+                  { color: viewMode === 'day' ? '#fff' : colors.text }
+                ]}>
+                  Day
               </Text>
             </TouchableOpacity>
+            </View>
           </View>
           <View style={styles.monthArrows}>
             <TouchableOpacity 
-              onPress={() => viewMode === 'month' ? navigateMonth('prev') : navigateWeek('prev')} 
+              onPress={() => {
+                switch (viewMode) {
+                  case 'month': navigateMonth('prev'); break;
+                  case 'week': navigateWeek('prev'); break;
+                  case '3day': navigate3Day('prev'); break;
+                  case 'day': navigateDay('prev'); break;
+                }
+              }} 
               style={styles.arrowButton}
             >
               <Ionicons 
@@ -551,8 +839,23 @@ export default function CalendarScreen() {
                 color={colors.text}
               />
             </TouchableOpacity>
+            
             <TouchableOpacity 
-              onPress={() => viewMode === 'month' ? navigateMonth('next') : navigateWeek('next')} 
+              onPress={jumpToToday}
+              style={[styles.todayButton, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
+            >
+              <Text style={[styles.todayButtonText, { color: colors.text }]}>Today</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={() => {
+                switch (viewMode) {
+                  case 'month': navigateMonth('next'); break;
+                  case 'week': navigateWeek('next'); break;
+                  case '3day': navigate3Day('next'); break;
+                  case 'day': navigateDay('next'); break;
+                }
+              }} 
               style={styles.arrowButton}
             >
               <Ionicons 
@@ -568,20 +871,201 @@ export default function CalendarScreen() {
           <View style={styles.calendarGrid}>
             {renderCalendarDays()}
           </View>
-        ) : (
+         ) : viewMode === 'week' ? (
           renderWeekView()
+         ) : viewMode === '3day' ? (
+           render3DayView()
+         ) : (
+           <View style={styles.dayContainer}>
+             <View style={styles.dayHeader}>
+               <Text style={[styles.dayHeaderText, { color: colors.text }]}>
+                 {selectedDate.toLocaleDateString('en-US', { 
+                   weekday: 'long', 
+                   month: 'long', 
+                   day: 'numeric',
+                   year: 'numeric'
+                 })}
+               </Text>
+               {(() => {
+                 const isToday = 
+                   selectedDate.getDate() === new Date().getDate() && 
+                   selectedDate.getMonth() === new Date().getMonth() && 
+                   selectedDate.getFullYear() === new Date().getFullYear();
+                 
+                 return isToday && (
+                   <View style={[styles.todayBadge, { backgroundColor: colors.tint }]}>
+                     <Text style={styles.todayBadgeText}>Today</Text>
+                   </View>
+                 );
+               })()}
+             </View>
+           </View>
         )}
       </GlassMorphism>
 
-      <GlassMorphism intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} style={styles.tasksSection} borderRadius={20}>
+         <GlassMorphism 
+           intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} 
+           style={[
+             styles.tasksSection, 
+             viewMode === 'day' && styles.tasksSectionDayView
+           ]} 
+           borderRadius={20}
+         >
           <GlassMorphism 
             intensity={actualTheme === 'dark' ? 'medium' : 'extra-strong'} 
             style={styles.tasksTitleContainer} 
             borderRadius={12}
           >
-            <Text style={[styles.tasksTitle, { color: colors.text }]}>Tasks for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
+             <Text style={[styles.tasksTitle, { color: colors.text }]}>
+               {viewMode === 'day' ? 'Timeline View' : `Tasks for ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+             </Text>
           </GlassMorphism>
           
+           {viewMode === 'day' ? (
+             // Day view timeline
+             <ScrollView 
+               style={styles.timelineContainer} 
+               showsVerticalScrollIndicator={false}
+               contentContainerStyle={styles.timelineScrollContent}
+             >
+               {(() => {
+                 const dayTasks = getTasksForDate(selectedDate);
+                 const now = new Date();
+                 const currentHour = now.getHours();
+                 const currentMinute = now.getMinutes();
+                 const isToday = 
+                   selectedDate.getDate() === new Date().getDate() && 
+                   selectedDate.getMonth() === new Date().getMonth() && 
+                   selectedDate.getFullYear() === new Date().getFullYear();
+
+                 // Generate hours for the timeline (6 AM to 11 PM)
+                 const hours = [];
+                 for (let hour = 6; hour <= 23; hour++) {
+                   hours.push(hour);
+                 }
+
+                 // Get tasks for a specific hour
+                 const getTasksForHour = (hour: number) => {
+                   return dayTasks.filter(task => {
+                     const taskStart = new Date(task.start_time);
+                     const taskEnd = new Date(task.end_time);
+                     return taskStart.getHours() <= hour && taskEnd.getHours() >= hour;
+                   });
+                 };
+
+                 // Format time for display
+                 const formatTime = (hour: number) => {
+                   if (hour === 0) return '12 AM';
+                   if (hour < 12) return `${hour} AM`;
+                   if (hour === 12) return '12 PM';
+                   return `${hour - 12} PM`;
+                 };
+
+                 return hours.map((hour) => {
+                   const hourTasks = getTasksForHour(hour);
+                   const isCurrentHour = isToday && hour === currentHour;
+                   const isPastHour = isToday && hour < currentHour;
+                   const isFutureHour = isToday && hour > currentHour;
+
+                   return (
+                     <View key={hour} style={styles.timelineHour}>
+                       <View style={styles.timelineHourHeader}>
+                         <Text style={[
+                           styles.timelineHourText, 
+                           { 
+                             color: isCurrentHour ? colors.tint : 
+                                    isPastHour ? colors.textSecondary : 
+                                    colors.text 
+                           }
+                         ]}>
+                           {formatTime(hour)}
+                         </Text>
+                         
+                         {isCurrentHour && (
+                           <View style={[styles.currentTimeIndicator, { backgroundColor: colors.tint }]}>
+                             <Text style={styles.currentTimeText}>
+                               {currentMinute < 10 ? `0${currentMinute}` : currentMinute}
+                             </Text>
+                           </View>
+                         )}
+                       </View>
+
+                       <View style={[
+                         styles.timelineHourContent,
+                         {
+                           backgroundColor: isCurrentHour ? 
+                             actualTheme === 'dark' ? 'rgba(74,144,226,0.1)' : 'rgba(74,144,226,0.05)' :
+                             actualTheme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.05)',
+                           borderColor: isCurrentHour ? colors.tint + '40' : 'rgba(255,255,255,0.1)',
+                         }
+                       ]}>
+                         {hourTasks.length > 0 ? (
+                           hourTasks.map((task) => (
+                             <TouchableOpacity
+                               key={task.id}
+                               style={[
+                                 styles.timelineTaskItem,
+                                 {
+                                   backgroundColor: getPriorityColor(task, colors.tint) + '20',
+                                   borderLeftColor: getPriorityColor(task, colors.tint),
+                                 }
+                               ]}
+                               onPress={() => handleTaskPress(task)}
+                             >
+                               <View style={styles.timelineTaskContent}>
+                                 <Text style={[styles.timelineTaskName, { color: colors.text }]}>
+                                   {task.name}
+                                 </Text>
+                                 <Text style={[styles.timelineTaskTime, { color: colors.textSecondary }]}>
+                                   {new Date(task.start_time).toLocaleTimeString([], { 
+                                     hour: '2-digit', 
+                                     minute: '2-digit' 
+                                   })} - {new Date(task.end_time).toLocaleTimeString([], { 
+                                     hour: '2-digit', 
+                                     minute: '2-digit' 
+                                   })}
+                                 </Text>
+                                 <View style={styles.timelineTaskMeta}>
+                                   <View style={[
+                                     styles.timelineTaskPriority,
+                                     { backgroundColor: getPriorityColor(task, colors.tint) + '40' }
+                                   ]}>
+                                     <Text style={[
+                                       styles.timelineTaskPriorityText,
+                                       { color: getPriorityColor(task, colors.tint) }
+                                     ]}>
+                                       {task.priority || 'medium'}
+                                     </Text>
+                                   </View>
+                                   <Text style={[
+                                     styles.timelineTaskStatus,
+                                     { 
+                                       color: task.status === 'completed' ? '#4CAF50' :
+                                              task.status === 'in_progress' ? '#FFA726' :
+                                              colors.textSecondary
+                                     }
+                                   ]}>
+                                     {task.status.replace('_', ' ')}
+                                   </Text>
+                                 </View>
+                               </View>
+                             </TouchableOpacity>
+                           ))
+                         ) : (
+                           <View style={styles.timelineEmptyHour}>
+                             <Text style={[styles.timelineEmptyText, { color: colors.textSecondary }]}>
+                               No tasks scheduled
+                             </Text>
+                           </View>
+                         )}
+                       </View>
+                     </View>
+                   );
+                 });
+               })()}
+             </ScrollView>
+           ) : (
+             // Regular list view for other modes
           <View style={styles.tasksList}>
             {(() => {
               const selectedDateTasks = getTasksForDate(selectedDate);
@@ -638,8 +1122,132 @@ export default function CalendarScreen() {
               ));
             })()}
           </View>
+           )}
         </GlassMorphism>
       </ScrollView>
+
+       {selectedTask && (
+         <Modal
+           visible
+           animationType="slide"
+           transparent
+           onRequestClose={closeTaskDetails}
+         >
+           <View style={styles.simpleModalOverlay}>
+             <Pressable style={StyleSheet.absoluteFillObject} onPress={closeTaskDetails} />
+             <View style={styles.simpleModalContent}>
+               <View style={[
+                 styles.simpleModalCard,
+                 { backgroundColor: actualTheme === 'dark' ? 'rgba(30,30,40,0.95)' : 'rgba(255,255,255,0.95)' }
+               ]}>
+                 <View style={styles.simpleModalHeader}>
+                   <Text style={[styles.simpleModalTitle, { color: colors.text }]}>
+                     {selectedTask.name}
+                   </Text>
+                   <TouchableOpacity onPress={closeTaskDetails} style={styles.simpleModalClose}>
+                     <Ionicons name="close" size={24} color={colors.text} />
+                   </TouchableOpacity>
+                 </View>
+
+                 <View style={styles.simpleModalBody}>
+                   {/* Priority */}
+                   <View style={styles.simpleModalRow}>
+                     <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Priority:</Text>
+                     <Text style={[styles.simpleModalValue, { color: colors.text }]}>
+                       {selectedTask.priority}
+                     </Text>
+                   </View>
+
+                   {/* Status */}
+                   <View style={styles.simpleModalRow}>
+                     <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Status:</Text>
+                     <Text style={[
+                       styles.simpleModalValue, 
+                       { color: selectedTask.status === 'in_progress' ? '#FFA726' : 
+                                selectedTask.status === 'completed' ? '#4CAF50' :
+                                selectedTask.status === 'paused' ? '#FF7043' :
+                                selectedTask.status === 'cancelled' ? '#EF5350' :
+                                colors.text }
+                     ]}>
+                       {selectedTask.status.replace('_', ' ')}
+                     </Text>
+                   </View>
+
+                   {/* Duration */}
+                   <View style={styles.simpleModalRow}>
+                     <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Duration:</Text>
+                     <Text style={[styles.simpleModalValue, { color: colors.text }]}>
+                       {formatDuration(selectedTask.duration)}
+                     </Text>
+                   </View>
+
+                   {/* Start Time */}
+                   <View style={styles.simpleModalRow}>
+                     <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Start Time:</Text>
+                     <Text style={[styles.simpleModalValue, { color: colors.text }]}>
+                       {formatDateTime(selectedTask.start_time)}
+                     </Text>
+                   </View>
+
+                   {/* End Time */}
+                   <View style={styles.simpleModalRow}>
+                     <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>End Time:</Text>
+                     <Text style={[styles.simpleModalValue, { color: colors.text }]}>
+                       {formatDateTime(selectedTask.end_time)}
+                     </Text>
+                   </View>
+
+                   {/* Created At */}
+                   <View style={styles.simpleModalRow}>
+                     <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Created:</Text>
+                     <Text style={[styles.simpleModalValue, { color: colors.text }]}>
+                       {formatDateTime(selectedTask.created_at)}
+                     </Text>
+                   </View>
+
+                   {/* Updated At */}
+                   <View style={styles.simpleModalRow}>
+                     <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Updated:</Text>
+                     <Text style={[styles.simpleModalValue, { color: colors.text }]}>
+                       {formatDateTime(selectedTask.updated_at)}
+                     </Text>
+                   </View>
+
+                   {/* Completed At (if applicable) */}
+                   {selectedTask.completed_at && (
+                     <View style={styles.simpleModalRow}>
+                       <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Completed:</Text>
+                       <Text style={[styles.simpleModalValue, { color: '#4CAF50' }]}>
+                         {formatDateTime(selectedTask.completed_at)}
+                       </Text>
+                     </View>
+                   )}
+
+                   {/* Paused At (if applicable) */}
+                   {selectedTask.paused_at && (
+                     <View style={styles.simpleModalRow}>
+                       <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Paused:</Text>
+                       <Text style={[styles.simpleModalValue, { color: '#FF7043' }]}>
+                         {formatDateTime(selectedTask.paused_at)}
+                       </Text>
+                     </View>
+                   )}
+
+                   {/* Cancelled At (if applicable) */}
+                   {selectedTask.cancelled_at && (
+                     <View style={styles.simpleModalRow}>
+                       <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Cancelled:</Text>
+                       <Text style={[styles.simpleModalValue, { color: '#EF5350' }]}>
+                         {formatDateTime(selectedTask.cancelled_at)}
+                       </Text>
+                     </View>
+                   )}
+                 </View>
+               </View>
+             </View>
+           </View>
+         </Modal>
+       )}
 
       {/* Task Input Modal */}
       <Modal
@@ -839,13 +1447,19 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   viewToggle: {
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 12,
+  },
+  viewModeButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    marginLeft: 12,
+    minWidth: 50,
+    alignItems: 'center',
   },
   viewToggleText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
   },
   monthTitleContainer: {
@@ -865,6 +1479,16 @@ const styles = StyleSheet.create({
   arrowButton: {
     padding: 8,
     borderRadius: 20,
+  },
+  todayButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    marginHorizontal: 8,
+  },
+  todayButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   calendarGrid: {
     flexDirection: 'row',
@@ -960,6 +1584,10 @@ const styles = StyleSheet.create({
     padding: 16,
     minHeight: 150,
   },
+  tasksSectionDayView: {
+    marginTop: 0,
+    paddingTop: 8,
+  },
   tasksTitleContainer: {
     marginBottom: 16,
     padding: 16,
@@ -1047,6 +1675,90 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     zIndex: 1000,
+  },
+  taskDetailsModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  taskDetailsModalContent: {
+    width: '100%',
+    maxWidth: 400,
+  },
+  taskDetailsCard: {
+    padding: 20,
+    borderRadius: 20,
+  },
+  taskDetailsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 18,
+  },
+  taskDetailsTitleWrapper: {
+    flex: 1,
+    marginRight: 12,
+  },
+  taskDetailsTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  taskDetailsPriority: {
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  taskDetailsPriorityText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  taskDetailsCloseButton: {
+    padding: 6,
+  },
+  taskDetailsRow: {
+    marginBottom: 16,
+  },
+  taskDetailsLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    opacity: 0.7,
+  },
+  taskDetailsStatus: {
+    fontSize: 16,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  taskDetailsInfoRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  taskDetailsInfoColumn: {
+    flex: 1,
+  },
+  taskDetailsInfoColumnSpacing: {
+    marginRight: 16,
+  },
+  taskDetailsValue: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  taskDetailsDivider: {
+    height: 1,
+    borderRadius: 1,
+  },
+  taskDetailsTimestamps: {
+    marginTop: 8,
+  },
+  taskDetailsTimestampText: {
+    fontSize: 12,
+    opacity: 0.65,
+    marginTop: 4,
   },
   modalContainer: {
     flex: 1,
@@ -1246,5 +1958,243 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     marginTop: 4,
+  },
+  // 3-day view styles
+  threeDayContainer: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    marginTop: 8,
+  },
+  threeDayHeaderRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  threeDayHeaderCell: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  threeDayHeaderText: {
+    fontSize: 14,
+    fontWeight: '700',
+    opacity: 0.8,
+  },
+  threeDayDaysRow: {
+    flexDirection: 'row',
+    minHeight: 140,
+  },
+  threeDayCell: {
+    flex: 1,
+    padding: 6,
+  },
+  threeDayCellContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    minHeight: 120,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  threeDayNumber: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  threeDayMonthLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 12,
+    opacity: 0.7,
+  },
+  threeDayTaskIndicators: {
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 'auto',
+    paddingBottom: 12,
+  },
+  threeDayTaskDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginVertical: 1,
+  },
+  threeDayMoreTasks: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  // Day view styles
+  dayContainer: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    marginTop: 8,
+    flex: 1,
+  },
+  dayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 12,
+  },
+  dayHeaderText: {
+    fontSize: 20,
+    fontWeight: '600',
+    flex: 1,
+  },
+  todayBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  todayBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  timelineContainer: {
+    flex: 1,
+    paddingHorizontal: 12,
+    maxHeight: 400, // Limit height to make it scrollable
+  },
+  timelineScrollContent: {
+    paddingBottom: 20, // Add padding at bottom for better scrolling
+  },
+  timelineHour: {
+    marginBottom: 8,
+  },
+  timelineHourHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+    paddingHorizontal: 8,
+  },
+  timelineHourText: {
+    fontSize: 14,
+    fontWeight: '600',
+    minWidth: 60,
+  },
+  currentTimeIndicator: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  currentTimeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  timelineHourContent: {
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 8,
+    minHeight: 60,
+  },
+  timelineTaskItem: {
+    borderRadius: 6,
+    borderLeftWidth: 4,
+    padding: 12,
+    marginBottom: 8,
+  },
+  timelineTaskContent: {
+    flex: 1,
+  },
+  timelineTaskName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  timelineTaskTime: {
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  timelineTaskMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  timelineTaskPriority: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  timelineTaskPriorityText: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  timelineTaskStatus: {
+    fontSize: 12,
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  timelineEmptyHour: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  timelineEmptyText: {
+    fontSize: 14,
+    opacity: 0.6,
+  },
+  // Simple modal styles
+  simpleModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 20,
+  },
+  simpleModalContent: {
+    width: '100%',
+    maxWidth: 400,
+  },
+  simpleModalCard: {
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  simpleModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  simpleModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    flex: 1,
+    marginRight: 12,
+  },
+  simpleModalClose: {
+    padding: 4,
+  },
+  simpleModalBody: {
+    gap: 12,
+  },
+  simpleModalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  simpleModalLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  simpleModalValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: 12,
   },
 });
