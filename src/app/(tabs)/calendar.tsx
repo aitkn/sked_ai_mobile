@@ -573,72 +573,7 @@ export default function CalendarScreen() {
         )}
       </GlassMorphism>
 
-      <GlassMorphism intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} style={styles.tasksSection} borderRadius={20}>
-          <GlassMorphism 
-            intensity={actualTheme === 'dark' ? 'medium' : 'extra-strong'} 
-            style={styles.tasksTitleContainer} 
-            borderRadius={12}
-          >
-            <Text style={[styles.tasksTitle, { color: colors.text }]}>Tasks for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
-          </GlassMorphism>
-          
-          <View style={styles.tasksList}>
-            {(() => {
-              const selectedDateTasks = getTasksForDate(selectedDate);
-              
-              if (selectedDateTasks.length === 0) {
-                return (
-                  <View style={[styles.noTasksItem, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.15)' }]}>
-                    <Text style={[styles.noTasksText, { color: colors.text }]}>No tasks scheduled</Text>
-                    <Text style={[styles.promptText, { color: actualTheme === 'dark' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)' }]}>Tap the + button to add a task</Text>
-                  </View>
-                );
-              }
-              
-              return selectedDateTasks.map((task) => (
-                <View 
-                  key={task.id} 
-                  style={[
-                    styles.taskItem, 
-                    { 
-                      backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)',
-                      borderLeftColor: task.status === 'completed' ? '#4CAF50' :
-                                      task.status === 'in_progress' ? '#FFA726' :
-                                      colors.tint,
-                    }
-                  ]}
-                >
-                  <View style={styles.taskHeader}>
-                    <View style={styles.taskTitleContainer}>
-                      <Text style={[styles.taskName, { color: colors.text }]}>{task.name}</Text>
-                      <View style={[styles.priorityBadge, { 
-                        backgroundColor: getPriorityColor(task, colors.tint) + '20',
-                        borderColor: getPriorityColor(task, colors.tint),
-                      }]}>
-                        <Text style={[styles.priorityText, { 
-                          color: getPriorityColor(task, colors.tint) 
-                        }]}>
-                          {task.priority || 'medium'}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={[styles.taskStatus, { 
-                      color: task.status === 'completed' ? '#4CAF50' :
-                            task.status === 'in_progress' ? '#FFA726' :
-                            colors.textSecondary
-                    }]}>
-                      {task.status.replace('_', ' ')}
-                    </Text>
-                  </View>
-                  <Text style={[styles.taskTime, { color: colors.textSecondary }]}>
-                    {new Date(task.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
-                    {new Date(task.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </Text>
-                </View>
-              ));
-            })()}
-          </View>
-        </GlassMorphism>
+
       </ScrollView>
 
       {/* Task Input Modal */}
