@@ -343,6 +343,85 @@ export class InternalDB {
     return this.actions.filter(action => action.task_id === taskId)
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   }
+
+  // Get tasks by status
+  async getTasksByStatus(status: InternalTask['status']): Promise<InternalTask[]> {
+    await this.loadTasks()
+    return this.tasks.filter(task => task.status === status)
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+  }
+
+  // Get tasks within a specific time range (enhanced)
+  async getTasksInTimeRange(startTime: Date, endTime: Date, includeCompleted: boolean = false): Promise<InternalTask[]> {
+    await this.loadTasks()
+    
+    const startMs = startTime.getTime()
+    const endMs = endTime.getTime()
+    
+    return this.tasks.filter(task => {
+      // Filter by completion status if needed
+      if (!includeCompleted && task.status === 'completed') {
+        return false
+      }
+      
+      const taskStartMs = new Date(task.start_time).getTime()
+      const taskEndMs = new Date(task.end_time).getTime()
+      
+      // Task overlaps with the range if:
+      // - Task starts before range ends AND task ends after range starts
+      return taskStartMs < endMs && taskEndMs > startMs
+    }).sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+  }
+
+  // Update multiple tasks at once
+  async updateMultipleTasks(updates: Array<{ id: string; updates: Partial<Omit<InternalTask, 'id' | 'created_at'>> }>): Promise<InternalTask[]> {
+    await this.loadTasks()
+    
+    const updatedTasks: InternalTask[] = []
+    
+    for (const { id, updates: taskUpdates } of updates) {
+      const taskIndex = this.tasks.findIndex(task => task.id === id)
+      if (taskIndex !== -1) {
+        const updatedTask = {
+          ...this.tasks[taskIndex],
+          ...taskUpdates,
+          updated_at: new Date().toISOString(),
+        }
+        this.tasks[taskIndex] = updatedTask
+        updatedTasks.push(updatedTask)
+      }
+    }
+    
+    if (updatedTasks.length > 0) {
+      await this.saveTasks()
+      console.log('📝 Updated multiple tasks in internal DB:', updatedTasks.length, 'tasks')
+    }
+    
+    return updatedTasks
+  }
+
+  // Bulk delete tasks
+  async deleteMultipleTasks(taskIds: string[]): Promise<number> {
+    await this.loadTasks()
+    
+    let deletedCount = 0
+    const originalLength = this.tasks.length
+    
+    // Remove tasks in reverse order to maintain indices
+    for (let i = this.tasks.length - 1; i >= 0; i--) {
+      if (taskIds.includes(this.tasks[i].id)) {
+        this.tasks.splice(i, 1)
+        deletedCount++
+      }
+    }
+    
+    if (deletedCount > 0) {
+      await this.saveTasks()
+      console.log('🗑️ Deleted multiple tasks from internal DB:', deletedCount, 'tasks')
+    }
+    
+    return deletedCount
+  }
 }
 
 // Export singleton instance
