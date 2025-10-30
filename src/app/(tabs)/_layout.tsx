@@ -95,6 +95,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="scheduled-tasks"
+        options={{
+          title: 'Scheduled Tasks',
+          tabBarIcon: ({ color }) => <TabBarIcon name="check-square-o" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="calendar"
         options={{
           title: 'Calendar',
