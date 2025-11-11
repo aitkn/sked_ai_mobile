@@ -27,6 +27,8 @@ import { supabase } from '@/lib/supabase'
 import { useFocusEffect } from 'expo-router'
 import { GlassMorphism } from '@/components/GlassMorphism'
 import { ThemedGradient } from '@/components/ThemedGradient'
+import { assistantService } from '@/lib/llm/AssistantService'
+import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService'
 
 // Configure notification handler for Expo
 Notifications.setNotificationHandler({
@@ -1095,59 +1097,82 @@ export default function ScheduleScreen() {
       console.log('🔍 Auth check - user:', user ? 'exists' : 'null', 'error:', authError)
       
       if (!user) {
-        Alert.alert('Error', 'Please log in to save prompts')
+        Alert.alert('Error', 'Please log in to create tasks')
         return
       }
 
       console.log('🔍 User ID:', user.id)
+      console.log('🤖 Using LLM assistant to create task...')
 
-      // Save the prompt directly - no need to check table existence
-      console.log('🔍 Attempting to save prompt...')
-      const promptData = {
-        user_id: user.id,
-        prompt_text: taskInputText.trim()
-      }
-      
-      console.log('🔍 Prompt data to insert:', promptData)
-      
-      const { data, error } = await supabase
-        .schema('skedai')
-        .from('user_prompt')
-        .insert(promptData)
+      // Use LLM assistant to create task directly
+      let fullResponse = ''
+      await assistantService.sendMessage(taskInputText.trim(), (chunk: string) => {
+        fullResponse += chunk
+        // Could show streaming in UI if needed
+      })
 
-      if (error) {
-        console.error('❌ Error saving prompt:', error)
-        console.error('❌ Error details:', JSON.stringify(error, null, 2))
-        console.error('❌ Error code:', error.code)
-        console.error('❌ Error message:', error.message)
-        
-        Alert.alert(
-          'Error',
-          `Failed to save your prompt: ${error.message || 'Unknown error'}`,
-          [{ text: 'OK' }]
-        )
-        return
-      }
-
-      console.log('✅ Prompt saved successfully:', data)
+      console.log('✅ LLM response:', fullResponse)
       
       // Reset modal state
       setTaskInputText('')
       setShowTaskInput(false)
       
-      // Show processing indicator for 2 seconds
-      setShowProcessingIndicator(true)
-      setTimeout(() => {
-        setShowProcessingIndicator(false)
-      }, 2000)
-      
-    } catch (error: any) {
-      console.error('❌ Error saving prompt:', error)
+      // Show success message
       Alert.alert(
-        'Error',
-        `Failed to save your prompt: ${error.message}`,
+        'Success',
+        'Task created successfully! The schedule will update shortly.',
         [{ text: 'OK' }]
       )
+      
+      // Reload tasks after a delay to allow backend solver to process
+      // The solver needs to: 1) solve the task, 2) create solution in task_solution table
+      // This can take 5-10 seconds, so we'll check multiple times
+      let attempts = 0;
+      const maxAttempts = 30; // Check for up to 30 seconds (solver can take 20-30 seconds)
+      const checkInterval = setInterval(async () => {
+        attempts++;
+        console.log(`🔄 Syncing tasks from Supabase (attempt ${attempts}/${maxAttempts})...`);
+        
+        // Sync from task_solution table (same as web app)
+        const result = await syncTasksFromSupabase();
+        
+        if (result.success && result.taskCount > 0) {
+          console.log(`✅ Synced ${result.taskCount} tasks! Reloading schedule...`);
+          loadInternalTasks();
+          clearInterval(checkInterval);
+          return;
+        } else if (result.success && result.taskCount === 0) {
+          console.log('⏳ No tasks found yet, solver may still be processing...');
+        } else {
+          console.log(`⏳ Sync failed or no tasks: ${result.error || 'no tasks'}`);
+        }
+
+        // If we've tried enough times, stop checking
+        if (attempts >= maxAttempts) {
+          console.log('⏰ Stopped checking for task updates');
+          clearInterval(checkInterval);
+          // Final sync attempt
+          const finalResult = await syncTasksFromSupabase();
+          if (finalResult.success && finalResult.taskCount > 0) {
+            loadInternalTasks();
+          }
+        }
+      }, 1000); // Check every second
+      
+    } catch (error: any) {
+      console.error('❌ Error creating task:', error)
+      
+      let errorMessage = 'Failed to create task. Please try again.'
+      
+      if (error.message?.includes('not authenticated') || error.message?.includes('Auth error')) {
+        errorMessage = 'Please sign in to create tasks.'
+      } else if (error.message?.includes('not configured')) {
+        errorMessage = 'LLM not configured. Please check your settings.'
+      } else if (error.message) {
+        errorMessage = error.message
+      }
+      
+      Alert.alert('Error', errorMessage, [{ text: 'OK' }])
     } finally {
       setIsProcessing(false)
     }
@@ -1458,7 +1483,7 @@ export default function ScheduleScreen() {
               disabled={!taskInputText.trim() || isProcessing}
             >
               <Text style={[styles.createButtonText, (!taskInputText.trim() || isProcessing) && styles.disabledButtonText]}>
-                {isProcessing ? 'Saving...' : 'Save Prompt'}
+                {isProcessing ? 'Creating Task...' : 'Create Task'}
               </Text>
             </TouchableOpacity>
           </View>

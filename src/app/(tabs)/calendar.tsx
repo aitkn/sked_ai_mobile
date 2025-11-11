@@ -9,7 +9,8 @@ import { Session } from '@supabase/supabase-js';
 import Colors from '@/constants/Colors';
 import { GlassMorphism } from '@/components/GlassMorphism';
 import { ThemedGradient } from '@/components/ThemedGradient';
-import { internalDB, InternalTask } from '@/lib/internal-db';
+import { internalDB, InternalTask, InternalDB } from '@/lib/internal-db';
+import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService';
 
 export default function CalendarScreen() {
   const { actualTheme, colors } = useTheme();
@@ -288,7 +289,7 @@ export default function CalendarScreen() {
     }
     
     if (!session?.user) {
-      Alert.alert('Error', 'Please log in to save prompts');
+      Alert.alert('Error', 'Please log in to create tasks');
       return;
     }
     
@@ -308,51 +309,81 @@ export default function CalendarScreen() {
         finalPrompt = `On ${dateStr}: ${finalPrompt}`;
       }
 
-      console.log('🔍 Saving prompt for calendar date:', dateStr);
-      const promptData = {
-        user_id: session.user.id,
-        prompt_text: finalPrompt
-      };
+      console.log('🤖 Using LLM assistant to create task for date:', dateStr);
       
-      const { data, error } = await supabase
-        .schema('skedai')
-        .from('user_prompt')
-        .insert(promptData);
+      // Import assistant service dynamically to avoid circular dependencies
+      const { assistantService } = await import('@/lib/llm/AssistantService');
+      
+      // Use LLM assistant to create task directly
+      let fullResponse = '';
+      await assistantService.sendMessage(finalPrompt, (chunk: string) => {
+        fullResponse += chunk;
+        // Could show streaming in UI if needed
+      });
 
-      if (error) {
-        console.error('❌ Error saving prompt:', error);
-        Alert.alert(
-          'Error',
-          `Failed to save your prompt: ${error.message || 'Unknown error'}`,
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-
-      console.log('✅ Prompt saved successfully:', data);
+      console.log('✅ LLM response:', fullResponse);
       
       // Reset modal state
       setTaskInputText('');
       setShowTaskInput(false);
       
-      // Show processing indicator for 2 seconds
-      setShowProcessingIndicator(true);
-      setTimeout(() => {
-        setShowProcessingIndicator(false);
-      }, 2000);
-
-      // Reload tasks to reflect any new ones created by the AI processor
-      setTimeout(() => {
-        loadTasks();
-      }, 3000);
-      
-    } catch (error: any) {
-      console.error('❌ Error saving prompt:', error);
+      // Show success message
       Alert.alert(
-        'Error',
-        `Failed to save your prompt: ${error.message}`,
+        'Success',
+        'Task created successfully! The calendar will update shortly.',
         [{ text: 'OK' }]
       );
+
+      // Reload tasks after a delay to allow backend processing
+      // The backend needs to: 1) solve the task, 2) create solution, 3) processor creates timeline
+      // This can take 5-10 seconds, so we'll check multiple times
+      let attempts = 0;
+      const maxAttempts = 30; // Check for up to 30 seconds (solver can take 20-30 seconds)
+      const checkInterval = setInterval(async () => {
+        attempts++;
+        console.log(`🔄 Checking for timeline update (attempt ${attempts}/${maxAttempts})...`);
+        
+        // Sync from task_solution table (same as web app)
+        const result = await syncTasksFromSupabase();
+        
+        if (result.success && result.taskCount > 0) {
+          console.log(`✅ Synced ${result.taskCount} tasks! Reloading calendar...`);
+          // Reload tasks from internalDB
+          loadTasks();
+          clearInterval(checkInterval);
+          return;
+        } else if (result.success && result.taskCount === 0) {
+          console.log('⏳ No tasks found yet, solver may still be processing...');
+        } else {
+          console.log(`⏳ Sync failed or no tasks: ${result.error || 'no tasks'}`);
+        }
+
+        // If we've tried enough times, stop checking
+        if (attempts >= maxAttempts) {
+          console.log('⏰ Stopped checking for task updates');
+          clearInterval(checkInterval);
+          // Final sync attempt
+          const finalResult = await syncTasksFromSupabase();
+          if (finalResult.success && finalResult.taskCount > 0) {
+            loadTasks();
+          }
+        }
+      }, 1000); // Check every second
+      
+    } catch (error: any) {
+      console.error('❌ Error creating task:', error);
+      
+      let errorMessage = 'Failed to create task. Please try again.';
+      
+      if (error.message?.includes('not authenticated') || error.message?.includes('Auth error')) {
+        errorMessage = 'Please sign in to create tasks.';
+      } else if (error.message?.includes('not configured')) {
+        errorMessage = 'LLM not configured. Please check your settings.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('Error', errorMessage, [{ text: 'OK' }]);
     } finally {
       setIsProcessing(false);
     }
