@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { DATABASE_CONFIG } from '../config/globals.js'
+import { DATABASE_CONFIG, SCHEDULING_CONFIG } from '../config/globals.js'
 
 export class TimelineGenerator {
   constructor(supabaseUrl, supabaseKey) {
@@ -44,6 +44,7 @@ export class TimelineGenerator {
    */
   async getExistingTimeline(userId) {
     const { data, error } = await this.supabase
+      .schema(DATABASE_CONFIG.SCHEMA)
       .from(DATABASE_CONFIG.TABLES.USER_TIMELINE)
       .select('*')
       .eq('user_id', userId)
@@ -78,15 +79,38 @@ export class TimelineGenerator {
     let timelineTasks = []
     
     if (existingTimeline && existingTimeline.timeline_json && existingTimeline.timeline_json.tasks) {
-      // Start with existing tasks, filtering out old/completed ones
       const now = new Date()
-      timelineTasks = existingTimeline.timeline_json.tasks.filter(task => {
-        const taskEndTime = new Date(task.end_time)
-        return taskEndTime > now // Only keep future tasks
-      })
+      const taskMap = new Map()
+
+      for (const task of existingTimeline.timeline_json.tasks) {
+        const endString = task.end_time || task.endTime || task.end
+        const endDate = endString ? new Date(endString) : null
+        if (!endDate || endDate <= now) continue
+
+        // Remove prior auto-generated context tasks tied to this new task
+        if (task.auto_generated && task.parent_task === newTask.task_id) {
+          continue
+        }
+
+        const key = task.task_id || task.id || `${task.name}-${task.start_time || task.start || ''}`
+        if (!taskMap.has(key)) {
+          taskMap.set(key, task)
+        } else {
+          // If duplicate keys exist, prefer the most recent timeline entry (later start time)
+          const existing = taskMap.get(key)
+          const existingStart = new Date(existing.start_time || existing.start || 0)
+          const newStart = new Date(task.start_time || task.start || 0)
+          if (newStart > existingStart) {
+            taskMap.set(key, task)
+          }
+        }
+      }
+
+      timelineTasks = Array.from(taskMap.values())
     }
 
     // Add the new task
+    timelineTasks = timelineTasks.filter(task => task.task_id !== newTask.task_id)
     timelineTasks.push(newTask)
 
     // Sort tasks by start time
@@ -95,8 +119,10 @@ export class TimelineGenerator {
     // Resolve any conflicts by adjusting times if needed
     timelineTasks = this.resolveTimeConflicts(timelineTasks)
 
-    // Generate additional context tasks to fill the day
-    timelineTasks = this.addContextTasks(timelineTasks, newTask)
+    // Generate additional context tasks only when enabled
+    if (SCHEDULING_CONFIG.ENABLE_CONTEXT_TASKS) {
+      timelineTasks = this.addContextTasks(timelineTasks, newTask)
+    }
 
     return {
       tasks: timelineTasks,
@@ -173,7 +199,8 @@ export class TimelineGenerator {
       duration: 900, // 15 minutes
       task_type: 'break',
       priority: 'low',
-      auto_generated: true
+      auto_generated: true,
+      parent_task: newTask.task_id
     })
 
     // Merge context tasks with main tasks and sort
@@ -193,6 +220,7 @@ export class TimelineGenerator {
     }
     
     const { data, error } = await this.supabase
+      .schema(DATABASE_CONFIG.SCHEMA)
       .from(DATABASE_CONFIG.TABLES.USER_TIMELINE)
       .insert(timelineData)
       .select()
@@ -228,6 +256,7 @@ export class TimelineGenerator {
     }
     
     const { data, error } = await this.supabase
+      .schema(DATABASE_CONFIG.SCHEMA)
       .from(DATABASE_CONFIG.TABLES.USER_TIMELINE)
       .insert(timelineData)
       .select()

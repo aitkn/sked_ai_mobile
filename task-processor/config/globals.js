@@ -7,6 +7,9 @@ export const SCHEDULING_CONFIG = {
   // Tasks are scheduled at 5-minute intervals (8:00, 8:05, 8:10, etc.)
   INTERVAL_GRANULARITY: 5, // minutes
   
+  // Toggle helper/context tasks (breaks, prep) in generated timelines
+  ENABLE_CONTEXT_TASKS: false,
+  
   // Send push notifications 30 seconds before each interval
   // This gives the app time to prepare for upcoming tasks
   NOTIFICATION_LEAD_TIME: 30, // seconds
