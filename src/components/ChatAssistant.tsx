@@ -128,7 +128,7 @@ export function ChatAssistant({ onTaskCreated, initialMessage }: ChatAssistantPr
           style={[
             styles.messageBubble,
             {
-              backgroundColor: isUser ? colors.tint : colors.cardBackground,
+              backgroundColor: isUser ? colors.tint : (actualTheme === 'dark' ? colors.cardBackground : '#d3d3d3'),
             },
           ]}
         >
@@ -146,15 +146,14 @@ export function ChatAssistant({ onTaskCreated, initialMessage }: ChatAssistantPr
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         ref={scrollViewRef}
         style={styles.messagesContainer}
         contentContainerStyle={styles.messagesContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="none"
+        showsVerticalScrollIndicator={false}
       >
         {messages.map((message, index) => renderMessage(message, index))}
         
@@ -163,7 +162,7 @@ export function ChatAssistant({ onTaskCreated, initialMessage }: ChatAssistantPr
             <View
               style={[
                 styles.messageBubble,
-                { backgroundColor: colors.cardBackground },
+                { backgroundColor: actualTheme === 'dark' ? colors.cardBackground : '#d3d3d3' },
               ]}
             >
               <Text style={[styles.messageText, { color: colors.text }]}>
@@ -179,7 +178,7 @@ export function ChatAssistant({ onTaskCreated, initialMessage }: ChatAssistantPr
             <View
               style={[
                 styles.messageBubble,
-                { backgroundColor: colors.cardBackground },
+                { backgroundColor: actualTheme === 'dark' ? colors.cardBackground : '#d3d3d3' },
               ]}
             >
               <ActivityIndicator size="small" color={colors.tint} />
@@ -191,7 +190,7 @@ export function ChatAssistant({ onTaskCreated, initialMessage }: ChatAssistantPr
       <View
         style={[
           styles.inputContainer,
-          { backgroundColor: colors.cardBackground, borderTopColor: colors.borderColor },
+          { backgroundColor: colors.background, borderTopColor: colors.borderColor },
         ]}
       >
         <TextInput
@@ -224,7 +223,7 @@ export function ChatAssistant({ onTaskCreated, initialMessage }: ChatAssistantPr
           )}
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

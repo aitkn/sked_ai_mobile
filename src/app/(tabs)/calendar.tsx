@@ -11,6 +11,7 @@ import { GlassMorphism } from '@/components/GlassMorphism';
 import { ThemedGradient } from '@/components/ThemedGradient';
 import { internalDB, InternalTask, InternalDB } from '@/lib/internal-db';
 import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService';
+import { ChatAssistant } from '@/components/ChatAssistant';
 
 export default function CalendarScreen() {
   const { actualTheme, colors } = useTheme();
@@ -230,7 +231,6 @@ export default function CalendarScreen() {
   };
 
   const handleQuickAddTask = () => {
-    setTaskInputText('');
     setShowTaskInput(true);
   };
 
@@ -1304,117 +1304,92 @@ export default function CalendarScreen() {
          </Modal>
        )}
 
-      {/* Task Input Modal */}
+      {/* Chat Assistant Modal - Replaces Task Input Modal */}
       <Modal
         visible={showTaskInput}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setShowTaskInput(false)}
       >
-        <TouchableOpacity 
-          style={[styles.modalContainer, { backgroundColor: actualTheme === 'dark' ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.6)' }]}
-          activeOpacity={1}
-          onPress={() => setShowTaskInput(false)}
-        >
+        <View style={[styles.modalContainer, { backgroundColor: actualTheme === 'dark' ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.6)' }]}>
           <KeyboardAvoidingView 
             style={styles.modalKeyboardContainer}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
           >
-            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-              <GlassMorphism style={[styles.modalContentWrapper, { backgroundColor: actualTheme === 'dark' ? 'rgba(30,30,40,0.95)' : 'rgba(255,255,255,0.85)' }]} intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} borderRadius={20}>
-                <View style={[styles.modalHeader, { backgroundColor: 'transparent', borderBottomColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
-                  <TouchableOpacity 
-                    onPress={() => setShowTaskInput(false)}
-                    style={styles.cancelButton}
-                  >
-                    <Text style={[styles.cancelButtonText, { color: actualTheme === 'dark' ? '#fff' : '#666' }]}>Cancel</Text>
-                  </TouchableOpacity>
-                  <Text style={[styles.modalTitle, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>Add Task for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
-                  <TouchableOpacity 
-                    onPress={handleCreateTaskFromInput}
-                    style={[styles.createButton, (!taskInputText.trim() || isProcessing) && styles.disabledButton]}
-                    disabled={!taskInputText.trim() || isProcessing}
-                  >
-                    <Text style={[styles.createButtonText, (!taskInputText.trim() || isProcessing) && styles.disabledButtonText]}>
-                      {isProcessing ? 'Saving...' : 'Save'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+            <GlassMorphism 
+              style={[styles.modalContentWrapper, { backgroundColor: actualTheme === 'dark' ? 'rgba(30,30,40,0.95)' : colors.background }]} 
+              intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} 
+              borderRadius={20}
+            >
+              {/* Header with close button */}
+              <View style={[styles.modalHeader, { backgroundColor: 'transparent', borderBottomColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
+                <Text style={[styles.modalTitle, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>
+                  AI Assistant - {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+                <TouchableOpacity 
+                  onPress={() => setShowTaskInput(false)}
+                  style={styles.cancelButton}
+                >
+                  <FontAwesome name="times" size={20} color={actualTheme === 'dark' ? '#fff' : '#666'} />
+                </TouchableOpacity>
+              </View>
 
-                <View style={[styles.modalContent, { backgroundColor: 'transparent' }]}>
-                  <Text style={[styles.inputLabel, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>Describe your task:</Text>
-                  <Text style={[styles.inputHint, { color: actualTheme === 'dark' ? '#aaa' : '#666' }]}>
-                    Tell us what you'd like to schedule for {selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                  </Text>
-                  
-                  <GlassMorphism style={[styles.inputContainer, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'transparent' }]} intensity={actualTheme === 'dark' ? 'strong' : 'light'} borderRadius={12}>
-                    <TextInput
-                      style={[styles.textInput, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}
-                      value={taskInputText}
-                      onChangeText={setTaskInputText}
-                      placeholder="What would you like to do?"
-                      placeholderTextColor={actualTheme === 'dark' ? '#888' : '#999'}
-                      multiline
-                      textAlignVertical="top"
-                      autoFocus
-                    />
-                    
-                    <TouchableOpacity
-                      style={[styles.voiceButton, isListening && styles.voiceButtonActive]}
-                      onPress={handleVoiceInput}
-                      disabled={isListening}
-                    >
-                      <FontAwesome 
-                        name={isListening ? "microphone" : "microphone-slash"} 
-                        size={20} 
-                        color={isListening ? "#fff" : actualTheme === 'dark' ? '#999' : '#666'} 
-                      />
-                    </TouchableOpacity>
-                  </GlassMorphism>
+              {/* Chat Assistant Component */}
+              <View style={styles.chatContainer}>
+                <ChatAssistant 
+                  initialMessage={`Schedule a task for ${selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`}
+                  onTaskCreated={() => {
+                    // Clear any existing sync interval before starting a new one
+                    if (syncIntervalRef.current) {
+                      clearInterval(syncIntervalRef.current)
+                      syncIntervalRef.current = null
+                    }
 
-                  {isListening && (
-                    <View style={styles.listeningIndicator}>
-                      <FontAwesome name="volume-up" size={16} color={Colors.light.tint} />
-                      <Text style={styles.listeningText}>Listening...</Text>
-                    </View>
-                  )}
+                    // Reload tasks after a delay to allow backend processing
+                    // The backend needs to: 1) solve the task, 2) create solution, 3) processor creates timeline
+                    // This can take 5-10 seconds, so we'll check multiple times
+                    let attempts = 0
+                    const maxAttempts = 30 // Check for up to 30 seconds (solver can take 20-30 seconds)
+                    const checkInterval = setInterval(async () => {
+                      attempts++
+                      console.log(`🔄 Checking for timeline update (attempt ${attempts}/${maxAttempts})...`)
+                      
+                      // Sync from task_solution table (same as web app)
+                      const result = await syncTasksFromSupabase()
+                      
+                      if (result.success && result.taskCount > 0) {
+                        console.log(`✅ Synced ${result.taskCount} tasks! Reloading calendar...`)
+                        // Reload tasks from internalDB
+                        loadTasks()
+                        clearInterval(checkInterval)
+                        syncIntervalRef.current = null
+                        return
+                      } else if (result.success && result.taskCount === 0) {
+                        console.log('⏳ No tasks found yet, solver may still be processing...')
+                      } else {
+                        console.log(`⏳ Sync failed or no tasks: ${result.error || 'no tasks'}`)
+                      }
 
-                  {isProcessing && (
-                    <View style={styles.processingIndicator}>
-                      <FontAwesome name="cog" size={16} color={Colors.light.tint} />
-                      <Text style={styles.processingText}>AI is processing your request...</Text>
-                    </View>
-                  )}
-
-                  <View style={styles.examplesContainer}>
-                    <Text style={[styles.examplesTitle, { color: actualTheme === 'dark' ? '#aaa' : '#666' }]}>Example phrases:</Text>
-                    <TouchableOpacity 
-                      onPress={() => setTaskInputText('Doctor appointment at 10am')}
-                    >
-                      <GlassMorphism style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'transparent' }]} intensity={actualTheme === 'dark' ? 'medium' : 'light'} borderRadius={20}>
-                        <Text style={[styles.exampleText, { color: actualTheme === 'dark' ? '#ccc' : '#666' }]}>"Doctor appointment at 10am"</Text>
-                      </GlassMorphism>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      onPress={() => setTaskInputText('Team lunch from 12pm to 1pm')}
-                    >
-                      <GlassMorphism style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'transparent' }]} intensity={actualTheme === 'dark' ? 'medium' : 'light'} borderRadius={20}>
-                        <Text style={[styles.exampleText, { color: actualTheme === 'dark' ? '#ccc' : '#666' }]}>"Team lunch from 12pm to 1pm"</Text>
-                      </GlassMorphism>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      onPress={() => setTaskInputText('Study for exam for 2 hours in the evening')}
-                    >
-                      <GlassMorphism style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'transparent' }]} intensity={actualTheme === 'dark' ? 'medium' : 'light'} borderRadius={20}>
-                        <Text style={[styles.exampleText, { color: actualTheme === 'dark' ? '#ccc' : '#666' }]}>"Study for exam for 2 hours in the evening"</Text>
-                      </GlassMorphism>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </GlassMorphism>
-            </TouchableOpacity>
+                      // If we've tried enough times, stop checking
+                      if (attempts >= maxAttempts) {
+                        console.log('⏰ Stopped checking for task updates')
+                        clearInterval(checkInterval)
+                        syncIntervalRef.current = null
+                        // Final sync attempt
+                        const finalResult = await syncTasksFromSupabase()
+                        if (finalResult.success && finalResult.taskCount > 0) {
+                          loadTasks()
+                        }
+                      }
+                    }, 1000)
+                    syncIntervalRef.current = checkInterval
+                  }}
+                />
+              </View>
+            </GlassMorphism>
           </KeyboardAvoidingView>
-        </TouchableOpacity>
+        </View>
       </Modal>
 
       {/* Floating Action Button */}
@@ -1817,15 +1792,16 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
   },
   modalKeyboardContainer: {
     justifyContent: 'flex-end',
-    flex: 0,
+    flex: 1,
   },
   modalContentWrapper: {
     backgroundColor: 'transparent',
+    flex: 1,
+    maxHeight: '90%',
     overflow: 'hidden',
   },
   modalHeader: {
@@ -1836,6 +1812,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  chatContainer: {
+    flex: 1,
+    minHeight: 400,
   },
   modalTitle: {
     fontSize: 16,

@@ -561,9 +561,23 @@ ${userMessage}`;
     response: Response,
     onChunk: (chunk: string) => void
   ): Promise<ClaudeResponse> {
-    const reader = response.body?.getReader();
+    // React Native doesn't always support response.body.getReader()
+    // Check if streaming is supported, otherwise fall back to text parsing
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    
+    try {
+      if (response.body && typeof response.body.getReader === 'function') {
+        reader = response.body.getReader();
+      }
+    } catch (e) {
+      console.log('[AssistantService] getReader() not available:', e);
+    }
+    
     if (!reader) {
-      throw new Error('Response body is not readable');
+      // Fallback: Read entire response as text and parse manually
+      console.log('[AssistantService] Streaming not supported, using text fallback');
+      const text = await response.text();
+      return this.parseStreamingText(text, onChunk);
     }
 
     const decoder = new TextDecoder();
@@ -664,6 +678,113 @@ ${userMessage}`;
       }
     } finally {
       reader.releaseLock();
+    }
+
+    return { content: contentBlocks, fullText };
+  }
+
+  /**
+   * Parse streaming text response (fallback for React Native)
+   * Parses SSE format text that was received all at once
+   *
+   * @param {string} text - Full SSE text response
+   * @param {Function} onChunk - Callback for chunks
+   * @returns {ClaudeResponse} Response object with content blocks and text
+   */
+  private parseStreamingText(
+    text: string,
+    onChunk: (chunk: string) => void
+  ): ClaudeResponse {
+    let fullText = '';
+    const contentBlocks: ContentBlock[] = [];
+    let currentToolBlock: ContentBlock | null = null;
+
+    // Split by double newlines (SSE event separator)
+    const events = text.split('\n\n');
+
+    for (const eventBlock of events) {
+      if (!eventBlock.trim()) continue;
+
+      const lines = eventBlock.split('\n');
+      let eventData = '';
+
+      // Extract data line
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          eventData = line.slice(6);
+          break;
+        }
+      }
+
+      if (eventData === '[DONE]' || !eventData) continue;
+
+      try {
+        const event = JSON.parse(eventData);
+
+        // Handle content_block_start
+        if (event.type === 'content_block_start') {
+          if (event.content_block?.type === 'text') {
+            contentBlocks.push({ type: 'text', text: '' });
+          } else if (event.content_block?.type === 'tool_use') {
+            console.log('[AssistantService] Tool use detected:', event.content_block.name);
+            currentToolBlock = {
+              type: 'tool_use',
+              id: event.content_block.id,
+              name: event.content_block.name,
+              input: '',
+            };
+            contentBlocks.push(currentToolBlock);
+          }
+        }
+
+        // Handle text deltas
+        if (event.type === 'content_block_delta') {
+          const delta = event.delta;
+          if (delta.type === 'text_delta') {
+            fullText += delta.text;
+            if (contentBlocks.length > 0 && contentBlocks[contentBlocks.length - 1].type === 'text') {
+              contentBlocks[contentBlocks.length - 1].text = (contentBlocks[contentBlocks.length - 1].text || '') + delta.text;
+            }
+            if (onChunk) {
+              onChunk(delta.text);
+            }
+          }
+          // Handle tool input JSON deltas
+          else if (delta.type === 'input_json_delta') {
+            if (currentToolBlock) {
+              currentToolBlock.input = (currentToolBlock.input || '') + delta.partial_json;
+            }
+          }
+        }
+
+        // Handle content_block_stop
+        if (event.type === 'content_block_stop') {
+          if (currentToolBlock) {
+            // Parse tool input JSON
+            if (currentToolBlock.input && typeof currentToolBlock.input === 'string' && currentToolBlock.input.trim()) {
+              try {
+                const parsed = JSON.parse(currentToolBlock.input);
+                currentToolBlock.input = parsed;
+              } catch (e) {
+                // Try to fix common issues
+                try {
+                  let fixed = currentToolBlock.input.replace(/,(\s*[}\]])/g, '$1');
+                  const parsed = JSON.parse(fixed);
+                  currentToolBlock.input = parsed;
+                } catch (e2) {
+                  currentToolBlock.input = {};
+                }
+              }
+            } else {
+              currentToolBlock.input = {};
+            }
+            currentToolBlock = null;
+          }
+        }
+
+      } catch (e) {
+        console.warn('[AssistantService] Failed to parse SSE event:', eventData);
+      }
     }
 
     return { content: contentBlocks, fullText };
