@@ -82,6 +82,7 @@ export default function ScheduleScreen() {
   const timerRef = useRef<NodeJS.Timeout | number | null>(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
   const expoNotificationService = useRef(new ExpoNotificationService()).current
+  const syncIntervalRef = useRef<NodeJS.Timeout | number | null>(null)
 
   // Load internal tasks when component mounts and set up frequent refresh
   useEffect(() => {
@@ -89,7 +90,14 @@ export default function ScheduleScreen() {
     loadTimelineData() // Also load timeline data on startup
     // Refresh internal tasks every 1 second for immediate updates
     const interval = setInterval(loadInternalTasks, 1000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      // Clean up sync interval on unmount
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current)
+        syncIntervalRef.current = null
+      }
+    }
   }, [])
 
   // Refresh tasks when app comes to foreground (to pick up notification actions)
@@ -1124,6 +1132,12 @@ export default function ScheduleScreen() {
         [{ text: 'OK' }]
       )
       
+      // Clear any existing sync interval before starting a new one
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+
       // Reload tasks after a delay to allow backend solver to process
       // The solver needs to: 1) solve the task, 2) create solution in task_solution table
       // This can take 5-10 seconds, so we'll check multiple times
@@ -1140,6 +1154,7 @@ export default function ScheduleScreen() {
           console.log(`✅ Synced ${result.taskCount} tasks! Reloading schedule...`);
           loadInternalTasks();
           clearInterval(checkInterval);
+          syncIntervalRef.current = null;
           return;
         } else if (result.success && result.taskCount === 0) {
           console.log('⏳ No tasks found yet, solver may still be processing...');
@@ -1151,6 +1166,7 @@ export default function ScheduleScreen() {
         if (attempts >= maxAttempts) {
           console.log('⏰ Stopped checking for task updates');
           clearInterval(checkInterval);
+          syncIntervalRef.current = null;
           // Final sync attempt
           const finalResult = await syncTasksFromSupabase();
           if (finalResult.success && finalResult.taskCount > 0) {
@@ -1158,6 +1174,9 @@ export default function ScheduleScreen() {
           }
         }
       }, 1000); // Check every second
+      
+      // Store interval reference for cleanup
+      syncIntervalRef.current = checkInterval;
       
     } catch (error: any) {
       console.error('❌ Error creating task:', error)
@@ -1175,6 +1194,11 @@ export default function ScheduleScreen() {
       Alert.alert('Error', errorMessage, [{ text: 'OK' }])
     } finally {
       setIsProcessing(false)
+      // Clean up interval on error
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
     }
   }
 

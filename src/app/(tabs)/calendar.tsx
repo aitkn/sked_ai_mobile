@@ -1,6 +1,6 @@
 import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View, Pressable } from 'react-native';
 import { Text } from '@/components/Themed';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import ThemedIcon from '@/components/ThemedIcon';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -36,6 +36,7 @@ export default function CalendarScreen() {
     const today = new Date();
     return new Date(today);
   });
+  const syncIntervalRef = useRef<NodeJS.Timeout | number | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -56,7 +57,14 @@ export default function CalendarScreen() {
     loadTasks();
     // Refresh tasks every second to catch updates
     const interval = setInterval(loadTasks, 1000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      // Clean up sync interval on unmount
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+    };
   }, []);
 
   const loadTasks = async () => {
@@ -334,6 +342,12 @@ export default function CalendarScreen() {
         [{ text: 'OK' }]
       );
 
+      // Clear any existing sync interval before starting a new one
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+
       // Reload tasks after a delay to allow backend processing
       // The backend needs to: 1) solve the task, 2) create solution, 3) processor creates timeline
       // This can take 5-10 seconds, so we'll check multiple times
@@ -351,6 +365,7 @@ export default function CalendarScreen() {
           // Reload tasks from internalDB
           loadTasks();
           clearInterval(checkInterval);
+          syncIntervalRef.current = null;
           return;
         } else if (result.success && result.taskCount === 0) {
           console.log('⏳ No tasks found yet, solver may still be processing...');
@@ -362,6 +377,7 @@ export default function CalendarScreen() {
         if (attempts >= maxAttempts) {
           console.log('⏰ Stopped checking for task updates');
           clearInterval(checkInterval);
+          syncIntervalRef.current = null;
           // Final sync attempt
           const finalResult = await syncTasksFromSupabase();
           if (finalResult.success && finalResult.taskCount > 0) {
@@ -369,6 +385,9 @@ export default function CalendarScreen() {
           }
         }
       }, 1000); // Check every second
+      
+      // Store interval reference for cleanup
+      syncIntervalRef.current = checkInterval;
       
     } catch (error: any) {
       console.error('❌ Error creating task:', error);
@@ -386,6 +405,11 @@ export default function CalendarScreen() {
       Alert.alert('Error', errorMessage, [{ text: 'OK' }]);
     } finally {
       setIsProcessing(false);
+      // Clean up interval on error
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
     }
   };
 
