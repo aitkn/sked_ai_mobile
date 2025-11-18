@@ -63,6 +63,7 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
     }
 
     // Step 1: Get current model ID
+    console.log(`[TaskSync] 🔍 Looking for current_model for user: ${user.id}`);
     const { data: currentModel, error: modelError } = await supabase
       .from('current_model')
       .select('model_id')
@@ -70,12 +71,20 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
       .single();
 
     if (modelError || !currentModel) {
-      console.log('[TaskSync] No current model found:', modelError?.message);
+      console.log('[TaskSync] ❌ No current model found:', modelError?.message);
+      console.log('[TaskSync] 🔍 Checking for any models for this user...');
+      const { data: allModels, error: allModelsError } = await supabase
+        .from('model')
+        .select('model_id, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      console.log('[TaskSync] 📋 Available models:', allModels?.length || 0, allModelsError?.message || '');
       return { success: false, taskCount: 0, error: 'No current model' };
     }
 
     let modelId = currentModel.model_id;
-    console.log('[TaskSync] Current model ID:', modelId);
+    console.log('[TaskSync] ✅ Current model ID:', modelId);
 
     // Step 1.5: Check if current model has solutions, if not, check for newer models
     const { data: currentSolutions, error: currentSolutionsError } = await supabase
@@ -113,34 +122,51 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
     }
 
     // Step 2: Fetch task solutions
-    console.log(`[TaskSync] Fetching task solutions for model: ${modelId}`);
+    console.log(`[TaskSync] 🔍 Fetching task solutions for model: ${modelId}`);
     const { data: taskSolutions, error: solutionsError } = await supabase
       .from('task_solution')
-      .select('task_id, solution_json')
+      .select('task_id, solution_json, model_id')
       .eq('model_id', modelId);
 
     if (solutionsError) {
-      console.error('[TaskSync] Error fetching task solutions:', solutionsError);
+      console.error('[TaskSync] ❌ Error fetching task solutions:', solutionsError);
+      console.error('[TaskSync] Error details:', JSON.stringify(solutionsError, null, 2));
       return { success: false, taskCount: 0, error: solutionsError.message };
     }
 
     if (!taskSolutions || taskSolutions.length === 0) {
-      console.log(`[TaskSync] No task solutions found for model ${modelId} - solver may still be processing`);
+      console.log(`[TaskSync] ⚠️ No task solutions found for model ${modelId}`);
+      console.log(`[TaskSync] 🔍 Checking all task_solution entries for this user...`);
+      const { data: allSolutions, error: allSolutionsError } = await supabase
+        .from('task_solution')
+        .select('task_id, model_id')
+        .limit(10);
+      console.log(`[TaskSync] 📋 Total task_solution entries in DB: ${allSolutions?.length || 0}`);
+      if (allSolutions && allSolutions.length > 0) {
+        console.log(`[TaskSync] 📋 Sample task_solution model_ids:`, allSolutions.slice(0, 3).map(s => s.model_id));
+      }
       return { success: true, taskCount: 0 };
     }
 
-    console.log(`[TaskSync] Found ${taskSolutions.length} task solutions in model ${modelId}`);
+    console.log(`[TaskSync] ✅ Found ${taskSolutions.length} task solutions in model ${modelId}`);
+    console.log(`[TaskSync] 📋 Task IDs:`, taskSolutions.map(ts => ts.task_id));
 
     // Step 3: Fetch task details
     const taskIds = taskSolutions.map(ts => ts.task_id);
+    console.log(`[TaskSync] 🔍 Fetching task details for ${taskIds.length} tasks`);
     const { data: tasks, error: tasksError } = await supabase
       .from('task')
       .select('task_id, name, task_type, rules')
       .in('task_id', taskIds);
 
     if (tasksError) {
-      console.error('[TaskSync] Error fetching tasks:', tasksError);
+      console.error('[TaskSync] ❌ Error fetching tasks:', tasksError);
       return { success: false, taskCount: 0, error: tasksError.message };
+    }
+
+    console.log(`[TaskSync] ✅ Fetched ${tasks?.length || 0} task details`);
+    if (tasks && tasks.length > 0) {
+      console.log(`[TaskSync] 📋 Task names:`, tasks.map(t => `${t.name} (${t.task_id})`));
     }
 
     const taskMap = new Map(tasks?.map(t => [t.task_id, t]) || []);
@@ -148,6 +174,7 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
     // Step 4: Get existing tasks from internalDB to check for duplicates
     const existingTasks = await internalDB.getAllTasks();
     const existingTaskIds = new Set(existingTasks.map(t => t.id));
+    const deletedTaskIds = new Set(await internalDB.getDeletedTaskIds());
 
     // Step 5: Convert task solutions to InternalTask format and save
     // Only sync tasks that don't already exist (deduplication)
@@ -165,6 +192,12 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
         continue;
       }
       processedTaskIds.add(ts.task_id);
+
+      if (deletedTaskIds.has(ts.task_id)) {
+        console.log(`[TaskSync] ⏭️ Skipping task ${ts.task_id} (deleted locally)`);
+        skippedCount++;
+        continue;
+      }
 
       const task = taskMap.get(ts.task_id);
       if (!task) {
@@ -184,6 +217,10 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
       const startTime = n2dt(startInterval);
       const endTime = n2dt(endInterval);
 
+      console.log(`[TaskSync] 🔄 Processing task: ${task.name} (${ts.task_id})`);
+      console.log(`[TaskSync]   Start interval: ${startInterval} → ${startTime}`);
+      console.log(`[TaskSync]   End interval: ${endInterval} → ${endTime}`);
+
       // Check if task already exists in internalDB
       const existingTask = existingTasks.find(t => t.id === ts.task_id);
       
@@ -199,22 +236,29 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
         // Preserve original created_at if task already exists
         created_at: existingTask?.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        completed_at: existingTask?.completed_at || null,
+        completed_at: existingTask?.completed_at,
       };
 
       // saveTask will upsert, but we log whether it's new or existing
       const wasExisting = existingTaskIds.has(ts.task_id);
+      console.log(`[TaskSync]   ${wasExisting ? 'Updating' : 'Creating'} task in internalDB...`);
       await internalDB.saveTask(internalTask);
       
       if (wasExisting) {
-        console.log(`[TaskSync] Updated existing task: ${internalTask.name} (${ts.task_id})`);
+        console.log(`[TaskSync] ✅ Updated existing task: ${internalTask.name} (${ts.task_id})`);
       } else {
-        console.log(`[TaskSync] Added new task: ${internalTask.name} (${ts.task_id})`);
+        console.log(`[TaskSync] ✅ Added new task: ${internalTask.name} (${ts.task_id})`);
         syncedCount++;
       }
     }
 
-    console.log(`[TaskSync] Sync complete: ${syncedCount} new tasks, ${skippedCount} duplicates skipped`);
+    console.log(`[TaskSync] ✅ Sync complete: ${syncedCount} new tasks, ${skippedCount} duplicates skipped`);
+    console.log(`[TaskSync] 📊 Summary: Model ${modelId}, ${taskSolutions.length} solutions, ${tasks?.length || 0} tasks fetched, ${syncedCount} saved to internalDB`);
+    
+    // Verify what's actually in internalDB now
+    const finalTasks = await internalDB.getAllTasks();
+    console.log(`[TaskSync] 📋 Final internalDB task count: ${finalTasks.length}`);
+    
     return { success: true, taskCount: syncedCount };
 
   } catch (error: any) {

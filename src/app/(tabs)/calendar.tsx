@@ -70,17 +70,30 @@ export default function CalendarScreen() {
 
   const loadTasks = async () => {
     try {
+      console.log('📅 Calendar: loadTasks() called');
       const allTasks = await internalDB.getAllTasks();
-      console.log('📅 Calendar: Loaded tasks:', allTasks.length);
-      console.log('📅 Calendar: Task details:', allTasks.map(t => ({
-        id: t.id,
-        name: t.name,
-        start: new Date(t.start_time).toLocaleString(),
-        status: t.status
-      })));
+      console.log('📅 Calendar: Loaded tasks from internalDB:', allTasks.length);
+      if (allTasks.length > 0) {
+        console.log('📅 Calendar: Task details:', allTasks.map(t => ({
+          id: t.id,
+          name: t.name,
+          start: new Date(t.start_time).toLocaleString(),
+          end: new Date(t.end_time).toLocaleString(),
+          status: t.status,
+          duration: t.duration
+        })));
+      } else {
+        console.log('📅 Calendar: ⚠️ No tasks in internalDB - checking if sync is needed...');
+        // Trigger a sync to see what happens
+        const syncResult = await syncTasksFromSupabase();
+        console.log('📅 Calendar: Sync result:', syncResult);
+        // Reload after sync
+        const tasksAfterSync = await internalDB.getAllTasks();
+        console.log('📅 Calendar: Tasks after sync:', tasksAfterSync.length);
+      }
       setTasks(allTasks);
     } catch (error) {
-      console.error('Error loading tasks for calendar:', error);
+      console.error('📅 Calendar: ❌ Error loading tasks:', error);
     }
   };
 
@@ -228,6 +241,40 @@ export default function CalendarScreen() {
     setCurrentDate(today);
     
     updateViewsForSelectedDate(today);
+  };
+
+  const handleDeleteAllTasks = async () => {
+    console.log('🗑️ Delete all tasks button pressed');
+    console.log('🗑️ Current task count:', tasks.length);
+    
+    Alert.alert(
+      'Delete All Tasks',
+      `Are you sure you want to delete all ${tasks.length} task(s)? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => console.log('🗑️ Delete cancelled'),
+        },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('🗑️ Deleting all tasks from internalDB...');
+              await internalDB.clearAllTasks();
+              console.log('✅ All tasks deleted');
+              await loadTasks(); // Reload to update UI
+              Alert.alert('Success', 'All tasks have been deleted.');
+            } catch (error) {
+              console.error('❌ Error deleting all tasks:', error);
+              Alert.alert('Error', 'Failed to delete tasks. Please try again.');
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const handleQuickAddTask = () => {
@@ -1519,6 +1566,16 @@ const styles = StyleSheet.create({
   todayButtonText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  deleteAllButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
+    marginHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 40,
+    minHeight: 40,
   },
   calendarGrid: {
     flexDirection: 'row',
