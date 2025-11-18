@@ -2,6 +2,10 @@ import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
 import { SCHEDULING_CONFIG, DATABASE_CONFIG, getNextInterval } from '../config/globals.js'
 
+// Tasks/entities/locations created via the LLM RPC live in the public schema
+// Tables touched by the LLM RPC (task, model, solution, etc.) live in the public schema
+const TASK_DATA_SCHEMA = 'public'
+
 // Epoch reference date (same as web app)
 const EPOCH = new Date('2020-01-01T00:00:00Z')
 const INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
@@ -381,7 +385,7 @@ export class SolutionGenerator {
   async getOrCreateModel(userId, task, analysis) {
     // First, try to get the current model for this user
     const { data: currentModel, error: currentModelError } = await this.supabase
-      .schema(DATABASE_CONFIG.SCHEMA)
+      .schema(TASK_DATA_SCHEMA)
       .from('current_model')
       .select('model_id')
       .eq('user_id', userId)
@@ -408,7 +412,7 @@ export class SolutionGenerator {
     }
     
     const { data, error } = await this.supabase
-      .schema(DATABASE_CONFIG.SCHEMA)
+      .schema(TASK_DATA_SCHEMA)
       .from(DATABASE_CONFIG.TABLES.MODEL)
       .insert(modelData)
       .select('model_id')
@@ -447,7 +451,7 @@ export class SolutionGenerator {
     }
     
     const { error: scoreError } = await this.supabase
-      .schema(DATABASE_CONFIG.SCHEMA)
+      .schema(TASK_DATA_SCHEMA)
       .from('solution_score')
       .insert(solutionScoreData)
     
@@ -471,7 +475,7 @@ export class SolutionGenerator {
     }
     
     const { data, error } = await this.supabase
-      .schema(DATABASE_CONFIG.SCHEMA)
+      .schema(TASK_DATA_SCHEMA)
       .from(DATABASE_CONFIG.TABLES.SOLUTION)
       .insert(solutionData)
       .select()
@@ -496,9 +500,27 @@ export class SolutionGenerator {
         console.warn('⚠️ Cannot create task_solution: missing task_id on task object')
         return null
       }
+
+      // CRITICAL: Verify task exists in database before creating task_solution
+      // The foreign key constraint requires the task to exist
+      const { data: existingTask, error: taskCheckError } = await this.supabase
+        .schema(TASK_DATA_SCHEMA)
+        .from(DATABASE_CONFIG.TABLES.TASK)
+        .select('task_id')
+        .eq('task_id', taskId)
+        .single()
+
+      if (taskCheckError || !existingTask) {
+        console.error(`❌ Task ${taskId} does not exist in database. Cannot create task_solution.`)
+        console.error(`   Task check error: ${taskCheckError?.message || 'Task not found'}`)
+        return null
+      }
+
+      console.log(`✅ Verified task ${taskId} exists in database`)
+
       // Get entity_id from task_entity relationship
       const { data: taskEntities, error: entityError } = await this.supabase
-        .schema(DATABASE_CONFIG.SCHEMA)
+        .schema(TASK_DATA_SCHEMA)
         .from('task_entity')
         .select('entity_id')
         .eq('task_id', taskId)
@@ -506,15 +528,22 @@ export class SolutionGenerator {
         .single()
 
       const entityId = taskEntities?.entity_id || null
+      if (entityError && entityError.code !== 'PGRST116') {
+        console.warn(`⚠️ Error fetching task_entity: ${entityError.message}`)
+      }
 
       // Get location_id from task_location relationship
       const { data: taskLocation, error: locationError } = await this.supabase
-        .schema(DATABASE_CONFIG.SCHEMA)
+        .schema(TASK_DATA_SCHEMA)
         .from('task_location')
         .select('user_location_id')
         .eq('task_id', taskId)
         .limit(1)
         .single()
+
+      if (locationError && locationError.code !== 'PGRST116') {
+        console.warn(`⚠️ Error fetching task_location: ${locationError.message}`)
+      }
 
       // Convert timestamps to interval numbers
       const startInterval = dt2n(schedule.startTime)
@@ -535,14 +564,17 @@ export class SolutionGenerator {
       }
 
       const { data, error } = await this.supabase
-        .schema(DATABASE_CONFIG.SCHEMA)
+        .schema(TASK_DATA_SCHEMA)
         .from('task_solution')
         .insert(taskSolutionData)
         .select()
         .single()
 
       if (error) {
-        console.warn(`⚠️ Failed to create task_solution entry: ${error.message}`)
+        console.error(`❌ Failed to create task_solution entry: ${error.message}`)
+        console.error(`   Error code: ${error.code}`)
+        console.error(`   Error details: ${JSON.stringify(error, null, 2)}`)
+        console.error(`   Task ID: ${taskId}, Model ID: ${modelId}`)
         // Don't throw - this is optional for mobile app compatibility
         return null
       }
@@ -550,7 +582,8 @@ export class SolutionGenerator {
       console.log(`✅ Created task_solution entry for task ${task.name} (${taskId})`)
       return data
     } catch (error) {
-      console.warn(`⚠️ Error creating task_solution entry: ${error.message}`)
+      console.error(`❌ Error creating task_solution entry: ${error.message}`)
+      console.error(`   Stack: ${error.stack}`)
       // Don't throw - this is optional
       return null
     }
