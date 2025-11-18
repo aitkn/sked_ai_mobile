@@ -28,6 +28,7 @@ export interface InternalAction {
 
 const STORAGE_KEY = 'internal_tasks'
 const ACTIONS_STORAGE_KEY = 'internal_actions'
+const DELETED_TASKS_STORAGE_KEY = 'internal_deleted_tasks'
 
 export class InternalDB {
   private static instance: InternalDB
@@ -35,6 +36,8 @@ export class InternalDB {
   private actions: InternalAction[] = []
   private loaded = false
   private actionsLoaded = false
+  private deletedTaskIds: Set<string> = new Set()
+  private deletedLoaded = false
 
   static getInstance(): InternalDB {
     if (!InternalDB.instance) {
@@ -80,6 +83,89 @@ export class InternalDB {
     }
   }
 
+  private async loadDeletedTaskIds(): Promise<Set<string>> {
+    if (this.deletedLoaded) {
+      return this.deletedTaskIds
+    }
+
+    try {
+      const stored = await AsyncStorage.getItem(DELETED_TASKS_STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed)) {
+          this.deletedTaskIds = new Set(parsed.filter((id: unknown) => typeof id === 'string'))
+        } else {
+          this.deletedTaskIds = new Set()
+        }
+      } else {
+        this.deletedTaskIds = new Set()
+      }
+    } catch (error) {
+      console.error('❌ Error loading deleted task ids from internal DB:', error)
+      this.deletedTaskIds = new Set()
+    }
+
+    this.deletedLoaded = true
+    return this.deletedTaskIds
+  }
+
+  private async saveDeletedTaskIds(): Promise<void> {
+    try {
+      await AsyncStorage.setItem(DELETED_TASKS_STORAGE_KEY, JSON.stringify(Array.from(this.deletedTaskIds)))
+      console.log('💾 Saved', this.deletedTaskIds.size, 'deleted task ids to internal DB')
+    } catch (error) {
+      console.error('❌ Error saving deleted task ids to internal DB:', error)
+    }
+  }
+
+  private async markTasksDeleted(taskIds: string[]): Promise<void> {
+    if (!taskIds.length) return
+
+    await this.loadDeletedTaskIds()
+    let changed = false
+
+    for (const taskId of taskIds) {
+      if (!taskId) continue
+      if (!this.deletedTaskIds.has(taskId)) {
+        this.deletedTaskIds.add(taskId)
+        changed = true
+      }
+    }
+
+    if (changed) {
+      await this.saveDeletedTaskIds()
+    }
+  }
+
+  private async unmarkTaskDeleted(taskId: string): Promise<void> {
+    if (!taskId) return
+
+    await this.loadDeletedTaskIds()
+    if (this.deletedTaskIds.delete(taskId)) {
+      await this.saveDeletedTaskIds()
+    }
+  }
+
+  async clearDeletedTaskHistory(): Promise<void> {
+    await this.loadDeletedTaskIds()
+    if (this.deletedTaskIds.size === 0) return
+
+    this.deletedTaskIds.clear()
+    await this.saveDeletedTaskIds()
+    console.log('🧹 Cleared deleted task history')
+  }
+
+  async getDeletedTaskIds(): Promise<string[]> {
+    await this.loadDeletedTaskIds()
+    return Array.from(this.deletedTaskIds)
+  }
+
+  async isTaskDeleted(taskId: string): Promise<boolean> {
+    if (!taskId) return false
+    await this.loadDeletedTaskIds()
+    return this.deletedTaskIds.has(taskId)
+  }
+
   // Get all tasks
   async getAllTasks(): Promise<InternalTask[]> {
     await this.loadTasks()
@@ -106,6 +192,7 @@ export class InternalDB {
 
     this.tasks.push(newTask)
     await this.saveTasks()
+    await this.unmarkTaskDeleted(newTask.id)
     
     console.log('➕ Added task to internal DB:', newTask.name)
     return newTask
@@ -129,6 +216,7 @@ export class InternalDB {
 
     this.tasks[taskIndex] = updatedTask
     await this.saveTasks()
+    await this.unmarkTaskDeleted(updatedTask.id)
     
     console.log('📝 Updated task in internal DB:', updatedTask.name)
     return updatedTask
@@ -146,6 +234,7 @@ export class InternalDB {
 
     const deletedTask = this.tasks.splice(taskIndex, 1)[0]
     await this.saveTasks()
+    await this.markTasksDeleted([deletedTask.id])
     
     console.log('🗑️ Deleted task from internal DB:', deletedTask.name)
     return true
@@ -167,6 +256,7 @@ export class InternalDB {
       }
       this.tasks[existingIndex] = updatedTask
       await this.saveTasks()
+      await this.unmarkTaskDeleted(updatedTask.id)
       console.log('📝 Updated existing task in internal DB:', updatedTask.name)
       return updatedTask
     } else {
@@ -186,6 +276,7 @@ export class InternalDB {
       
       this.tasks.push(newTask)
       await this.saveTasks()
+      await this.unmarkTaskDeleted(newTask.id)
       console.log('➕ Added new task to internal DB:', newTask.name)
       return newTask
     }
@@ -195,6 +286,7 @@ export class InternalDB {
   async clearAllTasks(): Promise<void> {
     this.tasks = []
     await this.saveTasks()
+    await this.clearDeletedTaskHistory()
     console.log('🧹 Cleared all tasks from internal DB')
   }
 
@@ -406,10 +498,12 @@ export class InternalDB {
     
     let deletedCount = 0
     const originalLength = this.tasks.length
+    const deletedIds: string[] = []
     
     // Remove tasks in reverse order to maintain indices
     for (let i = this.tasks.length - 1; i >= 0; i--) {
       if (taskIds.includes(this.tasks[i].id)) {
+        deletedIds.push(this.tasks[i].id)
         this.tasks.splice(i, 1)
         deletedCount++
       }
@@ -417,6 +511,7 @@ export class InternalDB {
     
     if (deletedCount > 0) {
       await this.saveTasks()
+      await this.markTasksDeleted(deletedIds)
       console.log('🗑️ Deleted multiple tasks from internal DB:', deletedCount, 'tasks')
     }
     
