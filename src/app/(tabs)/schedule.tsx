@@ -111,99 +111,110 @@ export default function ScheduleScreen() {
   )
 
   // Real-time subscription to listen for timeline updates from the processor
+  const scheduleChannelRef = useRef<any>(null);
+  const isScheduleSubscribedRef = useRef<boolean>(false);
+  
   useEffect(() => {
+    // Prevent double subscription
+    if (isScheduleSubscribedRef.current) {
+      console.log('📡 Schedule already subscribed, skipping...');
+      return;
+    }
+
+    // Clean up any existing channel first
+    if (scheduleChannelRef.current) {
+      console.log('🔌 Cleaning up existing schedule channel before subscribing...');
+      try {
+        supabase.removeChannel(scheduleChannelRef.current);
+      } catch (e) {
+        console.log('Schedule channel already removed or invalid');
+      }
+      scheduleChannelRef.current = null;
+    }
+
     console.log('🔗 Setting up real-time subscription for timeline updates...')
     
-    const channel = supabase
-      .channel('timeline-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // Listen for INSERT, UPDATE, DELETE
-          schema: 'skedai',
-          table: 'user_timeline'
-        },
-        (payload) => {
-          console.log('📡 Timeline update detected via real-time:', payload)
-          console.log('📡 Event type:', payload.eventType)
-          console.log('📡 New timeline data:', payload.new)
-          
-          // When timeline is updated by processor, refresh the UI
-          loadTimelineData()
-        }
-      )
-      .on(
-        'broadcast',
-        { event: 'timeline_update' },
-        (payload) => {
-          console.log('📡 Timeline broadcast received:', payload)
-          // Reload tasks when timeline is updated by processor
-          loadTimelineData()
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 Real-time subscription status:', status)
-      })
+    try {
+      const channel = supabase
+        .channel('timeline-updates')
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // Listen for INSERT, UPDATE, DELETE
+            schema: 'skedai',
+            table: 'user_timeline'
+          },
+          (payload) => {
+            console.log('📡 Timeline update detected via real-time:', payload)
+            console.log('📡 Event type:', payload.eventType)
+            console.log('📡 New timeline data:', payload.new)
+            
+            // When timeline is updated by processor, refresh the UI
+            loadTimelineData()
+          }
+        )
+        .on(
+          'broadcast',
+          { event: 'timeline_update' },
+          (payload) => {
+            console.log('📡 Timeline broadcast received:', payload)
+            // Reload tasks when timeline is updated by processor
+            loadTimelineData()
+          }
+        )
+        .subscribe((status) => {
+          console.log('📡 Real-time subscription status:', status)
+          if (status === 'SUBSCRIBED') {
+            isScheduleSubscribedRef.current = true;
+          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+            isScheduleSubscribedRef.current = false;
+          }
+        })
+
+      scheduleChannelRef.current = channel;
+    } catch (error) {
+      console.error('Error setting up schedule realtime subscription:', error);
+      isScheduleSubscribedRef.current = false;
+    }
 
     // Cleanup subscription when component unmounts
     return () => {
       console.log('🔌 Cleaning up real-time subscription...')
-      supabase.removeChannel(channel)
+      isScheduleSubscribedRef.current = false;
+      if (scheduleChannelRef.current) {
+        try {
+          supabase.removeChannel(scheduleChannelRef.current)
+        } catch (e) {
+          console.log('Error removing schedule channel:', e);
+        }
+        scheduleChannelRef.current = null;
+      }
     }
   }, [])
 
 
   const loadTimelineData = async () => {
     try {
-      // Get current user
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      console.log('📡 Syncing tasks from Supabase (via TaskSyncService)...')
       
-      if (authError || !user) {
-        console.log('📡 No authenticated user, skipping timeline fetch')
-        return
-      }
-
-      console.log('📡 Fetching timeline for user:', user.id)
+      // Use TaskSyncService which syncs from task_solution (the proper way)
+      // This avoids direct user_timeline queries that cause 403 errors
+      const result = await syncTasksFromSupabase()
       
-      // Fetch the latest timeline for the current user
-      const { data: timeline, error } = await supabase
-        .schema('skedai')
-        .from('user_timeline')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      if (error) {
-        console.log('📡 No timeline found or error:', error.message)
-        // No timeline found - clear all existing tasks to show empty schedule
-        console.log('📡 No timeline found, clearing all existing tasks...')
-        await internalDB.clearAllTasks()
-        // Reload internal tasks to show updated (empty) data
-        loadInternalTasks()
-        return
-      }
-
-      if (timeline && timeline.timeline_json) {
-        console.log('📡 Timeline found, processing tasks with category-based sync...')
-        
-        // Extract tasks from timeline_json
-        const timelineTasks = timeline.timeline_json.tasks || []
-        await syncTasksWithTimeline(timelineTasks)
-        
-        console.log(`📡 Processed ${timelineTasks.length} tasks from timeline`)
+      if (result.success) {
+        console.log(`📡 Synced ${result.taskCount} tasks from Supabase`)
       } else {
-        // No timeline found - clear all existing tasks
-        console.log('📡 No timeline found, clearing all existing tasks...')
-        await internalDB.clearAllTasks()
+        console.log('📡 Sync completed but no tasks found (solver may still be processing)')
+        // Don't clear existing tasks - they might still be valid
+        // The solver might just need more time to process
       }
       
       // Reload internal tasks to show updated data
       loadInternalTasks()
       
     } catch (error) {
-      console.error('📡 Error loading timeline data:', error)
+      console.error('📡 Error syncing tasks:', error)
+      // Don't clear tasks on error - keep existing data
     }
   }
 
@@ -1128,7 +1139,7 @@ export default function ScheduleScreen() {
       // The solver needs to: 1) solve the task, 2) create solution in task_solution table
       // This can take 5-10 seconds, so we'll check multiple times
       let attempts = 0;
-      const maxAttempts = 30; // Check for up to 30 seconds (solver can take 20-30 seconds)
+      const maxAttempts = 12; // Check for up to 12 seconds; we also listen for timeline fallback
       const checkInterval = setInterval(async () => {
         attempts++;
         console.log(`🔄 Syncing tasks from Supabase (attempt ${attempts}/${maxAttempts})...`);
@@ -1202,7 +1213,7 @@ export default function ScheduleScreen() {
             refreshing={false} 
             onRefresh={() => {
               console.log('📱 Manual refresh triggered')
-              loadTimelineData() // This will clear tasks and load fresh timeline data
+              loadTimelineData() // Sync tasks from Supabase (preserves existing tasks)
             }} 
           />
         }

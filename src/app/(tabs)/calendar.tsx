@@ -1,6 +1,6 @@
 import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View, Pressable } from 'react-native';
 import { Text } from '@/components/Themed';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import ThemedIcon from '@/components/ThemedIcon';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -9,7 +9,7 @@ import { Session } from '@supabase/supabase-js';
 import Colors from '@/constants/Colors';
 import { GlassMorphism } from '@/components/GlassMorphism';
 import { ThemedGradient } from '@/components/ThemedGradient';
-import { internalDB, InternalTask, InternalDB } from '@/lib/internal-db';
+import { internalDB, InternalTask } from '@/lib/internal-db';
 import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService';
 
 export default function CalendarScreen() {
@@ -338,7 +338,7 @@ export default function CalendarScreen() {
       // The backend needs to: 1) solve the task, 2) create solution, 3) processor creates timeline
       // This can take 5-10 seconds, so we'll check multiple times
       let attempts = 0;
-      const maxAttempts = 30; // Check for up to 30 seconds (solver can take 20-30 seconds)
+      const maxAttempts = 12; // Check for up to 12 seconds; we also listen for timeline fallback
       const checkInterval = setInterval(async () => {
         attempts++;
         console.log(`🔄 Checking for timeline update (attempt ${attempts}/${maxAttempts})...`);
@@ -712,6 +712,76 @@ export default function CalendarScreen() {
     );
   };
 
+  // Subscribe to realtime timeline updates from the task processor
+  const channelRef = useRef<any>(null);
+  const isSubscribedRef = useRef<boolean>(false);
+  
+  useEffect(() => {
+    // Prevent double subscription
+    if (isSubscribedRef.current) {
+      console.log('📡 Already subscribed, skipping...');
+      return;
+    }
+
+    // Clean up any existing channel first
+    if (channelRef.current) {
+      console.log('🔌 Cleaning up existing channel before subscribing...');
+      try {
+        supabase.removeChannel(channelRef.current);
+      } catch (e) {
+        console.log('Channel already removed or invalid');
+      }
+      channelRef.current = null;
+    }
+
+    // Use the same channel name as the task processor broadcasts to
+    const channelName = 'timeline-updates';
+    console.log('📡 Setting up realtime subscription for calendar:', channelName);
+    
+    try {
+      const channel = supabase
+        .channel(channelName)
+        .on('broadcast', { event: 'timeline_update' }, async () => {
+          try {
+            console.log('📡 Timeline broadcast received: syncing from Supabase');
+            const result = await syncTasksFromSupabase();
+            if (result.success) {
+              await loadTasks();
+            } else {
+              console.warn('⚠️ Timeline sync failed:', result.error);
+            }
+          } catch (e) {
+            console.error('Error handling timeline update:', e);
+          }
+        })
+        .subscribe((status) => {
+          console.log('📡 Calendar realtime subscription status:', status);
+          if (status === 'SUBSCRIBED') {
+            isSubscribedRef.current = true;
+          } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+            isSubscribedRef.current = false;
+          }
+        });
+
+      channelRef.current = channel;
+    } catch (error) {
+      console.error('Error setting up realtime subscription:', error);
+      isSubscribedRef.current = false;
+    }
+
+    return () => {
+      console.log('🔌 Cleaning up calendar realtime subscription...');
+      isSubscribedRef.current = false;
+      if (channelRef.current) {
+        try {
+          supabase.removeChannel(channelRef.current);
+        } catch (e) {
+          console.log('Error removing channel:', e);
+        }
+        channelRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <ThemedGradient style={styles.container}>

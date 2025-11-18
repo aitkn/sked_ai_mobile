@@ -103,6 +103,9 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
 
     if (!taskSolutions || taskSolutions.length === 0) {
       console.log(`[TaskSync] No task solutions found for model ${modelId} - solver may still be processing`);
+      // Don't try to access user_timeline directly (403 errors due to RLS)
+      // The Realtime subscription will notify us when solutions are ready
+      // or the polling mechanism will retry
       return { success: true, taskCount: 0 };
     }
 

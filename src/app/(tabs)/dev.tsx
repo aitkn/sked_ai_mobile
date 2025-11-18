@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  Platform,
 } from 'react-native'
 import { Text } from '@/components/Themed'
 import { FontAwesome } from '@expo/vector-icons'
@@ -15,6 +16,7 @@ import { supabase } from '@/lib/supabase'
 import { useFocusEffect } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
+import { OfflineDatabase } from '@/lib/offline/database'
 
 // Timeline interfaces
 interface TimelineTask {
@@ -404,31 +406,85 @@ export default function DevScreen() {
   }
 
   const handleClearTasks = async () => {
-    Alert.alert(
-      'Clear All Tasks',
-      'This will delete all tasks from the internal database. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear All',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true)
-              await internalDB.clearAllTasks()
-              await loadTasks()
-              await loadActions()
-              Alert.alert('Success', 'All tasks cleared from internal database.')
-            } catch (error: any) {
-              console.error('Error clearing tasks:', error)
-              Alert.alert('Error', `Failed to clear tasks: ${error.message}`)
-            } finally {
-              setLoading(false)
+    console.log('🧹 Clear All Tasks button clicked')
+    console.log('Platform:', Platform.OS)
+    
+    // For web, use window.confirm
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const confirmed = window.confirm(
+        'This will delete ALL tasks from both the internal database and offline storage. This action cannot be undone. Continue?'
+      )
+      if (!confirmed) {
+        console.log('Clear cancelled')
+        return
+      }
+    } else {
+      // For native platforms, use Alert
+      try {
+        Alert.alert(
+          'Clear All Tasks',
+          'This will delete ALL tasks from both the internal database and offline storage. This action cannot be undone. Continue?',
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => console.log('Clear cancelled') },
+            {
+              text: 'Clear All',
+              style: 'destructive',
+              onPress: () => {
+                // Execute clearing in next tick to ensure Alert is dismissed
+                setTimeout(() => executeClearTasks(), 100)
+              }
             }
-          }
-        }
-      ]
-    )
+          ]
+        )
+        return
+      } catch (error: any) {
+        console.error('❌ Error showing alert:', error)
+        Alert.alert('Error', `Failed to show confirmation: ${error.message || error.toString()}`)
+        return
+      }
+    }
+    
+    // Execute clearing for web or if Alert was bypassed
+    await executeClearTasks()
+  }
+
+  const executeClearTasks = async () => {
+    try {
+      console.log('🧹 Starting to clear all tasks...')
+      setLoading(true)
+      
+      // Clear internal database
+      console.log('🧹 Clearing internal database...')
+      await internalDB.clearAllTasks()
+      
+      // Clear offline database
+      console.log('🧹 Clearing offline database...')
+      const offlineDB = new OfflineDatabase()
+      await offlineDB.clearAll()
+      
+      console.log('🧹 Reloading tasks and actions...')
+      await loadTasks()
+      await loadActions()
+      
+      console.log('🧹 All tasks cleared successfully')
+      
+      // Show success message
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert('All tasks cleared from both internal and offline storage.')
+      } else {
+        Alert.alert('Success', 'All tasks cleared from both internal and offline storage.')
+      }
+    } catch (error: any) {
+      console.error('❌ Error clearing tasks:', error)
+      const errorMsg = `Failed to clear tasks: ${error.message || error.toString()}`
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert(errorMsg)
+      } else {
+        Alert.alert('Error', errorMsg)
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   // Delete individual task
@@ -1089,6 +1145,21 @@ export default function DevScreen() {
           <Text style={styles.sectionDescription}>
             Tools for testing task functionality with local data
           </Text>
+          
+          <TouchableOpacity 
+            style={[styles.button, styles.destructiveButton, loading && styles.disabledButton]} 
+            onPress={() => {
+              console.log('🔴 Button pressed - calling handleClearTasks')
+              handleClearTasks()
+            }}
+            disabled={loading}
+            activeOpacity={0.7}
+          >
+            <FontAwesome name="trash" size={16} color="#fff" />
+            <Text style={styles.buttonText}>
+              {loading ? 'Clearing...' : 'Clear All Tasks'}
+            </Text>
+          </TouchableOpacity>
           
           <TouchableOpacity 
             style={[styles.button, loading && styles.disabledButton]} 
@@ -1856,5 +1927,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     fontStyle: 'italic',
+  },
+  destructiveButton: {
+    backgroundColor: '#f44336',
   },
 })

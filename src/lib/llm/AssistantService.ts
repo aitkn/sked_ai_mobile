@@ -807,7 +807,7 @@ ${userMessage}`;
     console.log('[AssistantService] Normalized payload entities:', JSON.stringify(normalizedPayload.entities, null, 2));
     console.log('[AssistantService] Normalized payload locations:', JSON.stringify(normalizedPayload.locations, null, 2));
 
-    // Validate payload before sending
+    // Validate payload has at least one task
     if (!normalizedPayload.tasks || !Array.isArray(normalizedPayload.tasks) || normalizedPayload.tasks.length === 0) {
       console.error('[AssistantService] Invalid payload: tasks must be a non-empty array');
       throw new Error('Invalid payload: tasks must be a non-empty array');
@@ -823,6 +823,120 @@ ${userMessage}`;
         console.error('[AssistantService] Invalid task: missing location_name', task);
         throw new Error(`Task "${task.name || 'unnamed'}" is missing required location_name`);
       }
+    }
+
+    const buildTaskKey = (name: string | undefined, constraints?: string[], duration?: number | string | null) => {
+      const normalizedName = (name || '').trim().toLowerCase();
+      const normalizedConstraints = (constraints || [])
+        .map(constraint => constraint?.trim().toLowerCase() || '')
+        .sort()
+        .join('|');
+      const normalizedDuration = duration !== undefined && duration !== null ? String(duration) : 'no-duration';
+      return `${normalizedName}||${normalizedConstraints}||${normalizedDuration}`;
+    };
+
+    const getTaskConstraints = (taskRules?: { constraints?: string[] | null }) => {
+      if (!taskRules || !Array.isArray(taskRules.constraints)) {
+        return [] as string[];
+      }
+      return taskRules.constraints.filter((c): c is string => typeof c === 'string');
+    };
+
+    const seenPayloadTaskKeys = new Set<string>();
+
+    // Remove duplicate tasks within the payload itself
+    const uniquePayloadTasks = normalizedPayload.tasks.filter((task: any) => {
+      const key = buildTaskKey(task.name, task.constraints, task.duration);
+      if (seenPayloadTaskKeys.has(key)) {
+        console.log('[AssistantService] Skipping duplicate task within payload:', task.name, task.constraints);
+        return false;
+      }
+      seenPayloadTaskKeys.add(key);
+      return true;
+    });
+
+    // Fetch existing scheduled tasks to avoid resubmitting them
+    let existingTaskKeys = new Set<string>();
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData?.user?.id;
+
+      if (userId) {
+        const { data: scheduledTasks, error: scheduledError } = await supabase
+          .from('scheduled_task')
+          .select('task_id, task:task_id(name, rules)')
+          .eq('user_id', userId);
+
+        if (scheduledError) {
+          console.warn('[AssistantService] Failed to fetch existing scheduled tasks:', scheduledError.message);
+        } else if (scheduledTasks) {
+          existingTaskKeys = new Set(
+            scheduledTasks
+              .map((scheduledTask) => {
+                const taskRecord = Array.isArray(scheduledTask.task)
+                  ? scheduledTask.task[0]
+                  : scheduledTask.task;
+                const taskName = taskRecord?.name as string | undefined;
+                const constraints = getTaskConstraints(taskRecord?.rules as any);
+                return buildTaskKey(taskName, constraints);
+              })
+              .filter((key): key is string => Boolean(key))
+          );
+        }
+      }
+    } catch (fetchError) {
+      console.warn('[AssistantService] Error while retrieving existing tasks for deduplication:', fetchError);
+    }
+
+    const filteredTasks = uniquePayloadTasks.filter((task: any) => {
+      const key = buildTaskKey(task.name, task.constraints, task.duration);
+      if (existingTaskKeys.has(key)) {
+        console.log('[AssistantService] Skipping task already scheduled:', task.name, task.constraints);
+        return false;
+      }
+      return true;
+    });
+
+    if (filteredTasks.length === 0) {
+      console.log('[AssistantService] No new tasks to schedule after deduplication. Skipping RPC call.');
+      return {
+        success: true,
+        tasks: [],
+        entities: [],
+        locations: [],
+        task_count: 0,
+        entity_count: 0,
+        location_count: 0,
+        skipped: true,
+        message: 'No new tasks were identified to schedule.'
+      };
+    }
+
+    normalizedPayload.tasks = filteredTasks;
+
+    const activeEntityNames = new Set<string>();
+    const activeLocationNames = new Set<string>();
+    normalizedPayload.tasks.forEach((task: any) => {
+      (task.entity_names || []).forEach((name: string) => {
+        if (typeof name === 'string') {
+          activeEntityNames.add(name);
+        }
+      });
+      if (typeof task.location_name === 'string') {
+        activeLocationNames.add(task.location_name);
+      }
+    });
+
+    if (Array.isArray(normalizedPayload.entities)) {
+      normalizedPayload.entities = normalizedPayload.entities.filter((entity: any) =>
+        entity?.name ? activeEntityNames.has(entity.name) : false
+      );
+    }
+
+    if (Array.isArray(normalizedPayload.locations)) {
+      normalizedPayload.locations = normalizedPayload.locations.filter((location: any) =>
+        location?.name ? activeLocationNames.has(location.name) : false
+      );
     }
 
     // Call the new comprehensive RPC function
