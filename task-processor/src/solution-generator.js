@@ -436,8 +436,31 @@ export class SolutionGenerator {
 
   /**
    * Save solution to database
+   * Handles race conditions when multiple tasks share the same model_id
    */
   async saveSolution(modelId, schedule) {
+    // Check if a solution already exists for this model_id
+    // This prevents duplicate key errors when multiple tasks share the same model
+    const { data: existingSolution, error: checkError } = await this.supabase
+      .schema(TASK_DATA_SCHEMA)
+      .from(DATABASE_CONFIG.TABLES.SOLUTION)
+      .select('model_id, solution_score_id, solution_json')
+      .eq('model_id', modelId)
+      .limit(1)
+      .maybeSingle()
+    
+    if (checkError && checkError.code !== 'PGRST116') {
+      // PGRST116 is "not found" which is fine, other errors are real problems
+      throw new Error(`Failed to check for existing solution: ${checkError.message}`)
+    }
+    
+    // If solution already exists, return it (multiple tasks can share the same solution)
+    if (existingSolution) {
+      console.log(`📋 Reusing existing solution for model_id: ${modelId}`)
+      return existingSolution
+    }
+    
+    // No existing solution, create a new one
     // First, create a solution_score entry (required foreign key)
     const solutionScoreId = randomUUID()
     const solutionScoreData = {
@@ -456,6 +479,22 @@ export class SolutionGenerator {
       .insert(solutionScoreData)
     
     if (scoreError) {
+      // If solution_score insert fails due to duplicate, check if solution exists now
+      // (race condition: another process created it between our check and insert)
+      if (scoreError.code === '23505' || scoreError.message.includes('duplicate')) {
+        const { data: raceSolution } = await this.supabase
+          .schema(TASK_DATA_SCHEMA)
+          .from(DATABASE_CONFIG.TABLES.SOLUTION)
+          .select('model_id, solution_score_id, solution_json')
+          .eq('model_id', modelId)
+          .limit(1)
+          .maybeSingle()
+        
+        if (raceSolution) {
+          console.log(`📋 Race condition detected: solution now exists for model_id: ${modelId}`)
+          return raceSolution
+        }
+      }
       throw new Error(`Failed to create solution score: ${scoreError.message}`)
     }
     
@@ -482,6 +521,29 @@ export class SolutionGenerator {
       .single()
     
     if (error) {
+      // Handle duplicate key error (race condition: another process created solution)
+      if (error.code === '23505' || error.message.includes('duplicate key') || error.message.includes('solution_pk')) {
+        console.log(`⚠️ Duplicate key detected for model_id: ${modelId}, fetching existing solution...`)
+        
+        // Fetch the existing solution that was created by another process
+        const { data: existing, error: fetchError } = await this.supabase
+          .schema(TASK_DATA_SCHEMA)
+          .from(DATABASE_CONFIG.TABLES.SOLUTION)
+          .select('model_id, solution_score_id, solution_json')
+          .eq('model_id', modelId)
+          .limit(1)
+          .maybeSingle()
+        
+        if (fetchError) {
+          throw new Error(`Failed to fetch existing solution after duplicate key error: ${fetchError.message}`)
+        }
+        
+        if (existing) {
+          console.log(`✅ Retrieved existing solution for model_id: ${modelId}`)
+          return existing
+        }
+      }
+      
       throw new Error(`Failed to save solution: ${error.message}`)
     }
     
