@@ -22,11 +22,14 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { ExpoNotificationService } from '@/lib/notifications/expo-notifications'
 import * as Notifications from 'expo-notifications'
 import * as Speech from 'expo-speech'
-import { internalDB, InternalTask } from '@/lib/internal-db'
+import { internalDB, InternalTask, InternalDB } from '@/lib/internal-db'
 import { supabase } from '@/lib/supabase'
 import { useFocusEffect } from 'expo-router'
 import { GlassMorphism } from '@/components/GlassMorphism'
 import { ThemedGradient } from '@/components/ThemedGradient'
+import { assistantService } from '@/lib/llm/AssistantService'
+import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService'
+import { ChatAssistant } from '@/components/ChatAssistant'
 
 // Configure notification handler for Expo
 Notifications.setNotificationHandler({
@@ -80,6 +83,7 @@ export default function ScheduleScreen() {
   const timerRef = useRef<NodeJS.Timeout | number | null>(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
   const expoNotificationService = useRef(new ExpoNotificationService()).current
+  const syncIntervalRef = useRef<NodeJS.Timeout | number | null>(null)
 
   // Load internal tasks when component mounts and set up frequent refresh
   useEffect(() => {
@@ -87,7 +91,14 @@ export default function ScheduleScreen() {
     loadTimelineData() // Also load timeline data on startup
     // Refresh internal tasks every 1 second for immediate updates
     const interval = setInterval(loadInternalTasks, 1000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      // Clean up sync interval on unmount
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current)
+        syncIntervalRef.current = null
+      }
+    }
   }, [])
 
   // Refresh tasks when app comes to foreground (to pick up notification actions)
@@ -311,6 +322,13 @@ export default function ScheduleScreen() {
     
     for (const [taskId, timelineTask] of Array.from(timelineTaskMap)) {
       if (!existingTaskIds.has(taskId)) {
+        // Check if task was deleted before adding it back
+        const isDeleted = await internalDB.isTaskDeleted(taskId)
+        if (isDeleted) {
+          console.log(`⏭️ Skipping deleted task from timeline: ${timelineTask.name || taskId}`)
+          continue
+        }
+        
         const newTask = {
           id: taskId,
           name: timelineTask.name || timelineTask.title || 'Unnamed Task',
@@ -1059,7 +1077,6 @@ export default function ScheduleScreen() {
   }
 
   const handleQuickAddTask = () => {
-    setTaskInputText('')
     setShowTaskInput(true)
   }
 
@@ -1095,61 +1112,100 @@ export default function ScheduleScreen() {
       console.log('🔍 Auth check - user:', user ? 'exists' : 'null', 'error:', authError)
       
       if (!user) {
-        Alert.alert('Error', 'Please log in to save prompts')
+        Alert.alert('Error', 'Please log in to create tasks')
         return
       }
 
       console.log('🔍 User ID:', user.id)
+      console.log('🤖 Using LLM assistant to create task...')
 
-      // Save the prompt directly - no need to check table existence
-      console.log('🔍 Attempting to save prompt...')
-      const promptData = {
-        user_id: user.id,
-        prompt_text: taskInputText.trim()
-      }
-      
-      console.log('🔍 Prompt data to insert:', promptData)
-      
-      const { data, error } = await supabase
-        .schema('skedai')
-        .from('user_prompt')
-        .insert(promptData)
+      // Use LLM assistant to create task directly
+      let fullResponse = ''
+      await assistantService.sendMessage(taskInputText.trim(), (chunk: string) => {
+        fullResponse += chunk
+        // Could show streaming in UI if needed
+      })
 
-      if (error) {
-        console.error('❌ Error saving prompt:', error)
-        console.error('❌ Error details:', JSON.stringify(error, null, 2))
-        console.error('❌ Error code:', error.code)
-        console.error('❌ Error message:', error.message)
-        
-        Alert.alert(
-          'Error',
-          `Failed to save your prompt: ${error.message || 'Unknown error'}`,
-          [{ text: 'OK' }]
-        )
-        return
-      }
-
-      console.log('✅ Prompt saved successfully:', data)
+      console.log('✅ LLM response:', fullResponse)
       
       // Reset modal state
       setTaskInputText('')
       setShowTaskInput(false)
       
-      // Show processing indicator for 2 seconds
-      setShowProcessingIndicator(true)
-      setTimeout(() => {
-        setShowProcessingIndicator(false)
-      }, 2000)
-      
-    } catch (error: any) {
-      console.error('❌ Error saving prompt:', error)
+      // Show success message
       Alert.alert(
-        'Error',
-        `Failed to save your prompt: ${error.message}`,
+        'Success',
+        'Task created successfully! The schedule will update shortly.',
         [{ text: 'OK' }]
       )
+      
+      // Clear any existing sync interval before starting a new one
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+
+      // Reload tasks after a delay to allow backend solver to process
+      // The solver needs to: 1) solve the task, 2) create solution in task_solution table
+      // This can take 5-10 seconds, so we'll check multiple times
+      let attempts = 0;
+      const maxAttempts = 30; // Check for up to 30 seconds (solver can take 20-30 seconds)
+      const checkInterval = setInterval(async () => {
+        attempts++;
+        console.log(`🔄 Syncing tasks from Supabase (attempt ${attempts}/${maxAttempts})...`);
+        
+        // Sync from task_solution table (same as web app)
+        const result = await syncTasksFromSupabase();
+        
+        if (result.success && result.taskCount > 0) {
+          console.log(`✅ Synced ${result.taskCount} tasks! Reloading schedule...`);
+          loadInternalTasks();
+          clearInterval(checkInterval);
+          syncIntervalRef.current = null;
+          return;
+        } else if (result.success && result.taskCount === 0) {
+          console.log('⏳ No tasks found yet, solver may still be processing...');
+        } else {
+          console.log(`⏳ Sync failed or no tasks: ${result.error || 'no tasks'}`);
+        }
+
+        // If we've tried enough times, stop checking
+        if (attempts >= maxAttempts) {
+          console.log('⏰ Stopped checking for task updates');
+          clearInterval(checkInterval);
+          syncIntervalRef.current = null;
+          // Final sync attempt
+          const finalResult = await syncTasksFromSupabase();
+          if (finalResult.success && finalResult.taskCount > 0) {
+            loadInternalTasks();
+          }
+        }
+      }, 1000); // Check every second
+      
+      // Store interval reference for cleanup
+      syncIntervalRef.current = checkInterval;
+      
+    } catch (error: any) {
+      console.error('❌ Error creating task:', error)
+      
+      let errorMessage = 'Failed to create task. Please try again.'
+      
+      if (error.message?.includes('not authenticated') || error.message?.includes('Auth error')) {
+        errorMessage = 'Please sign in to create tasks.'
+      } else if (error.message?.includes('not configured')) {
+        errorMessage = 'LLM not configured. Please check your settings.'
+      } else if (error.message) {
+        errorMessage = error.message
+      }
+      
+      Alert.alert('Error', errorMessage, [{ text: 'OK' }])
     } finally {
       setIsProcessing(false)
+      // Clean up interval on error
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
     }
   }
 
@@ -1426,114 +1482,84 @@ export default function ScheduleScreen() {
         )}
       </ScrollView>
 
-      {/* Task Input Modal */}
+      {/* Chat Assistant Modal - Replaces Task Input Modal */}
       <Modal
         visible={showTaskInput}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setShowTaskInput(false)}
       >
-        <TouchableOpacity 
-          style={styles.modalContainer}
-          activeOpacity={1}
-          onPress={() => setShowTaskInput(false)}
-        >
+        <View style={styles.modalContainer}>
           <KeyboardAvoidingView 
             style={styles.modalKeyboardContainer}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
           >
-            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-              <View style={[styles.modalContentWrapper, { backgroundColor: colors.background }]}>
-                <View style={[styles.modalHeader, { backgroundColor: colors.background, borderBottomColor: colors.borderColor }]}>
-            <TouchableOpacity 
-              onPress={() => setShowTaskInput(false)}
-              style={styles.cancelButton}
-            >
-              <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Add Task Prompt</Text>
-            <TouchableOpacity 
-              onPress={handleCreateTaskFromInput}
-              style={[styles.createButton, (!taskInputText.trim() || isProcessing) && styles.disabledButton]}
-              disabled={!taskInputText.trim() || isProcessing}
-            >
-              <Text style={[styles.createButtonText, (!taskInputText.trim() || isProcessing) && styles.disabledButtonText]}>
-                {isProcessing ? 'Saving...' : 'Save Prompt'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+            <View style={[styles.modalContentWrapper, { backgroundColor: colors.background }]}>
+              {/* Header with close button */}
+              <View style={[styles.modalHeader, { backgroundColor: colors.background, borderBottomColor: colors.borderColor }]}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>AI Assistant</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowTaskInput(false)}
+                  style={styles.cancelButton}
+                >
+                  <FontAwesome name="times" size={20} color={colors.text} />
+                </TouchableOpacity>
+              </View>
 
-          <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Describe your task request:</Text>
-            <Text style={[styles.inputHint, { color: colors.textSecondary }]}>
-              Tell us what task you'd like to schedule and when
-            </Text>
-            
-            <View style={[styles.inputContainer, { borderColor: colors.borderColor, backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : '#f8f9fa' }]}>
-              <TextInput
-                style={[styles.textInput, { color: colors.text }]}
-                value={taskInputText}
-                onChangeText={setTaskInputText}
-                placeholder="What would you like to work on?"
-                placeholderTextColor={colors.textTertiary}
-                multiline
-                textAlignVertical="top"
-                autoFocus
-              />
-              
-              <TouchableOpacity
-                style={[styles.voiceButton, isListening && styles.voiceButtonActive]}
-                onPress={handleVoiceInput}
-                disabled={isListening}
-              >
-                <FontAwesome 
-                  name={isListening ? "microphone" : "microphone-slash"} 
-                  size={20} 
-                  color={isListening ? "#fff" : colors.textSecondary} 
+              {/* Chat Assistant Component */}
+              <View style={styles.chatContainer}>
+                <ChatAssistant 
+                  onTaskCreated={() => {
+                    // Clear any existing sync interval before starting a new one
+                    if (syncIntervalRef.current) {
+                      clearInterval(syncIntervalRef.current)
+                      syncIntervalRef.current = null
+                    }
+
+                    // Reload tasks after a delay to allow backend solver to process
+                    // The solver needs to: 1) solve the task, 2) create solution in task_solution table
+                    // This can take 5-10 seconds, so we'll check multiple times
+                    let attempts = 0
+                    const maxAttempts = 30 // Check for up to 30 seconds (solver can take 20-30 seconds)
+                    const checkInterval = setInterval(async () => {
+                      attempts++
+                      console.log(`🔄 Syncing tasks from Supabase (attempt ${attempts}/${maxAttempts})...`)
+                      
+                      // Sync from task_solution table (same as web app)
+                      const result = await syncTasksFromSupabase()
+                      
+                      if (result.success && result.taskCount > 0) {
+                        console.log(`✅ Synced ${result.taskCount} tasks! Reloading schedule...`)
+                        loadInternalTasks()
+                        clearInterval(checkInterval)
+                        syncIntervalRef.current = null
+                        return
+                      } else if (result.success && result.taskCount === 0) {
+                        console.log('⏳ No tasks found yet, solver may still be processing...')
+                      } else {
+                        console.log(`⏳ Sync failed or no tasks: ${result.error || 'no tasks'}`)
+                      }
+
+                      // If we've tried enough times, stop checking
+                      if (attempts >= maxAttempts) {
+                        console.log('⏰ Stopped checking for task updates')
+                        clearInterval(checkInterval)
+                        syncIntervalRef.current = null
+                        // Final sync attempt
+                        const finalResult = await syncTasksFromSupabase()
+                        if (finalResult.success && finalResult.taskCount > 0) {
+                          loadInternalTasks()
+                        }
+                      }
+                    }, 1000)
+                    syncIntervalRef.current = checkInterval
+                  }}
                 />
-              </TouchableOpacity>
+              </View>
             </View>
-
-            {isListening && (
-              <View style={styles.listeningIndicator}>
-                <FontAwesome name="volume-up" size={16} color={Colors.light.tint} />
-                <Text style={styles.listeningText}>Listening...</Text>
-              </View>
-            )}
-
-            {isProcessing && (
-              <View style={styles.processingIndicator}>
-                <FontAwesome name="cog" size={16} color={Colors.light.tint} />
-                <Text style={styles.processingText}>AI is processing your request...</Text>
-              </View>
-            )}
-
-            <View style={styles.examplesContainer}>
-              <Text style={[styles.examplesTitle, { color: colors.text }]}>Example phrases:</Text>
-              <TouchableOpacity 
-                style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0', borderColor: actualTheme === 'dark' ? '#333' : '#e0e0e0' }]}
-                onPress={() => setTaskInputText('Read emails for 15 minutes')}
-              >
-                <Text style={[styles.exampleText, { color: colors.textSecondary }]}>"Read emails for 15 minutes"</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0', borderColor: actualTheme === 'dark' ? '#333' : '#e0e0e0' }]}
-                onPress={() => setTaskInputText('Meeting with team in 10 minutes for 1 hour')}
-              >
-                <Text style={[styles.exampleText, { color: colors.textSecondary }]}>"Meeting with team in 10 minutes for 1 hour"</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0', borderColor: actualTheme === 'dark' ? '#333' : '#e0e0e0' }]}
-                onPress={() => setTaskInputText('Exercise for 30 minutes starting now')}
-              >
-                <Text style={[styles.exampleText, { color: colors.textSecondary }]}>"Exercise for 30 minutes starting now"</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-              </View>
-            </TouchableOpacity>
           </KeyboardAvoidingView>
-        </TouchableOpacity>
+        </View>
       </Modal>
 
       {/* Context Menu Modal */}
@@ -2031,15 +2057,19 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalKeyboardContainer: {
     justifyContent: 'flex-end',
-    flex: 0,
+    flex: 1,
   },
   modalContentWrapper: {
     backgroundColor: 'transparent',
+    flex: 1,
+    maxHeight: '90%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -2047,15 +2077,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     backgroundColor: 'transparent',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+  },
+  chatContainer: {
+    flex: 1,
+    minHeight: 400,
   },
   modalTitle: {
     fontSize: 18,

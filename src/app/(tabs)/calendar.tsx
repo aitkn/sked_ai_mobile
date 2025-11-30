@@ -1,6 +1,6 @@
 import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View, Pressable } from 'react-native';
 import { Text } from '@/components/Themed';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import ThemedIcon from '@/components/ThemedIcon';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -9,7 +9,9 @@ import { Session } from '@supabase/supabase-js';
 import Colors from '@/constants/Colors';
 import { GlassMorphism } from '@/components/GlassMorphism';
 import { ThemedGradient } from '@/components/ThemedGradient';
-import { internalDB, InternalTask } from '@/lib/internal-db';
+import { internalDB, InternalTask, InternalDB } from '@/lib/internal-db';
+import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService';
+import { ChatAssistant } from '@/components/ChatAssistant';
 
 export default function CalendarScreen() {
   const { actualTheme, colors } = useTheme();
@@ -35,6 +37,7 @@ export default function CalendarScreen() {
     const today = new Date();
     return new Date(today);
   });
+  const syncIntervalRef = useRef<NodeJS.Timeout | number | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -55,22 +58,42 @@ export default function CalendarScreen() {
     loadTasks();
     // Refresh tasks every second to catch updates
     const interval = setInterval(loadTasks, 1000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      // Clean up sync interval on unmount
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+    };
   }, []);
 
   const loadTasks = async () => {
     try {
+      console.log('📅 Calendar: loadTasks() called');
       const allTasks = await internalDB.getAllTasks();
-      console.log('📅 Calendar: Loaded tasks:', allTasks.length);
-      console.log('📅 Calendar: Task details:', allTasks.map(t => ({
-        id: t.id,
-        name: t.name,
-        start: new Date(t.start_time).toLocaleString(),
-        status: t.status
-      })));
+      console.log('📅 Calendar: Loaded tasks from internalDB:', allTasks.length);
+      if (allTasks.length > 0) {
+        console.log('📅 Calendar: Task details:', allTasks.map(t => ({
+          id: t.id,
+          name: t.name,
+          start: new Date(t.start_time).toLocaleString(),
+          end: new Date(t.end_time).toLocaleString(),
+          status: t.status,
+          duration: t.duration
+        })));
+      } else {
+        console.log('📅 Calendar: ⚠️ No tasks in internalDB - checking if sync is needed...');
+        // Trigger a sync to see what happens
+        const syncResult = await syncTasksFromSupabase();
+        console.log('📅 Calendar: Sync result:', syncResult);
+        // Reload after sync
+        const tasksAfterSync = await internalDB.getAllTasks();
+        console.log('📅 Calendar: Tasks after sync:', tasksAfterSync.length);
+      }
       setTasks(allTasks);
     } catch (error) {
-      console.error('Error loading tasks for calendar:', error);
+      console.error('📅 Calendar: ❌ Error loading tasks:', error);
     }
   };
 
@@ -220,8 +243,41 @@ export default function CalendarScreen() {
     updateViewsForSelectedDate(today);
   };
 
+  const handleDeleteAllTasks = async () => {
+    console.log('🗑️ Delete all tasks button pressed');
+    console.log('🗑️ Current task count:', tasks.length);
+    
+    Alert.alert(
+      'Delete All Tasks',
+      `Are you sure you want to delete all ${tasks.length} task(s)? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => console.log('🗑️ Delete cancelled'),
+        },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('🗑️ Deleting all tasks from internalDB...');
+              await internalDB.clearAllTasks();
+              console.log('✅ All tasks deleted');
+              await loadTasks(); // Reload to update UI
+              Alert.alert('Success', 'All tasks have been deleted.');
+            } catch (error) {
+              console.error('❌ Error deleting all tasks:', error);
+              Alert.alert('Error', 'Failed to delete tasks. Please try again.');
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
   const handleQuickAddTask = () => {
-    setTaskInputText('');
     setShowTaskInput(true);
   };
 
@@ -288,7 +344,7 @@ export default function CalendarScreen() {
     }
     
     if (!session?.user) {
-      Alert.alert('Error', 'Please log in to save prompts');
+      Alert.alert('Error', 'Please log in to create tasks');
       return;
     }
     
@@ -308,53 +364,99 @@ export default function CalendarScreen() {
         finalPrompt = `On ${dateStr}: ${finalPrompt}`;
       }
 
-      console.log('🔍 Saving prompt for calendar date:', dateStr);
-      const promptData = {
-        user_id: session.user.id,
-        prompt_text: finalPrompt
-      };
+      console.log('🤖 Using LLM assistant to create task for date:', dateStr);
       
-      const { data, error } = await supabase
-        .schema('skedai')
-        .from('user_prompt')
-        .insert(promptData);
+      // Import assistant service dynamically to avoid circular dependencies
+      const { assistantService } = await import('@/lib/llm/AssistantService');
+      
+      // Use LLM assistant to create task directly
+      let fullResponse = '';
+      await assistantService.sendMessage(finalPrompt, (chunk: string) => {
+        fullResponse += chunk;
+        // Could show streaming in UI if needed
+      });
 
-      if (error) {
-        console.error('❌ Error saving prompt:', error);
-        Alert.alert(
-          'Error',
-          `Failed to save your prompt: ${error.message || 'Unknown error'}`,
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-
-      console.log('✅ Prompt saved successfully:', data);
+      console.log('✅ LLM response:', fullResponse);
       
       // Reset modal state
       setTaskInputText('');
       setShowTaskInput(false);
       
-      // Show processing indicator for 2 seconds
-      setShowProcessingIndicator(true);
-      setTimeout(() => {
-        setShowProcessingIndicator(false);
-      }, 2000);
-
-      // Reload tasks to reflect any new ones created by the AI processor
-      setTimeout(() => {
-        loadTasks();
-      }, 3000);
-      
-    } catch (error: any) {
-      console.error('❌ Error saving prompt:', error);
+      // Show success message
       Alert.alert(
-        'Error',
-        `Failed to save your prompt: ${error.message}`,
+        'Success',
+        'Task created successfully! The calendar will update shortly.',
         [{ text: 'OK' }]
       );
+
+      // Clear any existing sync interval before starting a new one
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+
+      // Reload tasks after a delay to allow backend processing
+      // The backend needs to: 1) solve the task, 2) create solution, 3) processor creates timeline
+      // This can take 5-10 seconds, so we'll check multiple times
+      let attempts = 0;
+      const maxAttempts = 30; // Check for up to 30 seconds (solver can take 20-30 seconds)
+      const checkInterval = setInterval(async () => {
+        attempts++;
+        console.log(`🔄 Checking for timeline update (attempt ${attempts}/${maxAttempts})...`);
+        
+        // Sync from task_solution table (same as web app)
+        const result = await syncTasksFromSupabase();
+        
+        if (result.success && result.taskCount > 0) {
+          console.log(`✅ Synced ${result.taskCount} tasks! Reloading calendar...`);
+          // Reload tasks from internalDB
+          loadTasks();
+          clearInterval(checkInterval);
+          syncIntervalRef.current = null;
+          return;
+        } else if (result.success && result.taskCount === 0) {
+          console.log('⏳ No tasks found yet, solver may still be processing...');
+        } else {
+          console.log(`⏳ Sync failed or no tasks: ${result.error || 'no tasks'}`);
+        }
+
+        // If we've tried enough times, stop checking
+        if (attempts >= maxAttempts) {
+          console.log('⏰ Stopped checking for task updates');
+          clearInterval(checkInterval);
+          syncIntervalRef.current = null;
+          // Final sync attempt
+          const finalResult = await syncTasksFromSupabase();
+          if (finalResult.success && finalResult.taskCount > 0) {
+            loadTasks();
+          }
+        }
+      }, 1000); // Check every second
+      
+      // Store interval reference for cleanup
+      syncIntervalRef.current = checkInterval;
+      
+    } catch (error: any) {
+      console.error('❌ Error creating task:', error);
+      
+      let errorMessage = 'Failed to create task. Please try again.';
+      
+      if (error.message?.includes('not authenticated') || error.message?.includes('Auth error')) {
+        errorMessage = 'Please sign in to create tasks.';
+      } else if (error.message?.includes('not configured')) {
+        errorMessage = 'LLM not configured. Please check your settings.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('Error', errorMessage, [{ text: 'OK' }]);
     } finally {
       setIsProcessing(false);
+      // Clean up interval on error
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
     }
   };
 
@@ -1249,117 +1351,93 @@ export default function CalendarScreen() {
          </Modal>
        )}
 
-      {/* Task Input Modal */}
+      {/* Chat Assistant Modal - Replaces Task Input Modal */}
       <Modal
         visible={showTaskInput}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setShowTaskInput(false)}
       >
-        <TouchableOpacity 
-          style={[styles.modalContainer, { backgroundColor: actualTheme === 'dark' ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.6)' }]}
-          activeOpacity={1}
-          onPress={() => setShowTaskInput(false)}
-        >
+        <View style={[styles.modalContainer, { backgroundColor: '#ffffff' }]}>
           <KeyboardAvoidingView 
             style={styles.modalKeyboardContainer}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
           >
-            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-              <GlassMorphism style={[styles.modalContentWrapper, { backgroundColor: actualTheme === 'dark' ? 'rgba(30,30,40,0.95)' : 'rgba(255,255,255,0.85)' }]} intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} borderRadius={20}>
-                <View style={[styles.modalHeader, { backgroundColor: 'transparent', borderBottomColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
-                  <TouchableOpacity 
-                    onPress={() => setShowTaskInput(false)}
-                    style={styles.cancelButton}
-                  >
-                    <Text style={[styles.cancelButtonText, { color: actualTheme === 'dark' ? '#fff' : '#666' }]}>Cancel</Text>
-                  </TouchableOpacity>
-                  <Text style={[styles.modalTitle, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>Add Task for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Text>
-                  <TouchableOpacity 
-                    onPress={handleCreateTaskFromInput}
-                    style={[styles.createButton, (!taskInputText.trim() || isProcessing) && styles.disabledButton]}
-                    disabled={!taskInputText.trim() || isProcessing}
-                  >
-                    <Text style={[styles.createButtonText, (!taskInputText.trim() || isProcessing) && styles.disabledButtonText]}>
-                      {isProcessing ? 'Saving...' : 'Save'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+            <GlassMorphism 
+              style={[styles.modalContentWrapper, { backgroundColor: '#ffffff' }]} 
+              intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} 
+              borderRadius={0}
+            >
+              {/* Header with close button */}
+              <View style={[styles.modalHeader, { backgroundColor: 'transparent', borderBottomColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
+                <Text style={[styles.modalTitle, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>
+                  AI Assistant - {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+                <TouchableOpacity 
+                  onPress={() => setShowTaskInput(false)}
+                  style={styles.cancelButton}
+                >
+                  <FontAwesome name="times" size={20} color={actualTheme === 'dark' ? '#fff' : '#666'} />
+                </TouchableOpacity>
+              </View>
 
-                <View style={[styles.modalContent, { backgroundColor: 'transparent' }]}>
-                  <Text style={[styles.inputLabel, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>Describe your task:</Text>
-                  <Text style={[styles.inputHint, { color: actualTheme === 'dark' ? '#aaa' : '#666' }]}>
-                    Tell us what you'd like to schedule for {selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                  </Text>
-                  
-                  <GlassMorphism style={[styles.inputContainer, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'transparent' }]} intensity={actualTheme === 'dark' ? 'strong' : 'light'} borderRadius={12}>
-                    <TextInput
-                      style={[styles.textInput, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}
-                      value={taskInputText}
-                      onChangeText={setTaskInputText}
-                      placeholder="What would you like to do?"
-                      placeholderTextColor={actualTheme === 'dark' ? '#888' : '#999'}
-                      multiline
-                      textAlignVertical="top"
-                      autoFocus
-                    />
-                    
-                    <TouchableOpacity
-                      style={[styles.voiceButton, isListening && styles.voiceButtonActive]}
-                      onPress={handleVoiceInput}
-                      disabled={isListening}
-                    >
-                      <FontAwesome 
-                        name={isListening ? "microphone" : "microphone-slash"} 
-                        size={20} 
-                        color={isListening ? "#fff" : actualTheme === 'dark' ? '#999' : '#666'} 
-                      />
-                    </TouchableOpacity>
-                  </GlassMorphism>
+              {/* Chat Assistant Component */}
+              <View style={styles.chatContainer}>
+                <ChatAssistant 
+                  initialMessage={`Schedule a task for ${selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`}
+                  onClose={() => setShowTaskInput(false)}
+                  onTaskCreated={() => {
+                    // Clear any existing sync interval before starting a new one
+                    if (syncIntervalRef.current) {
+                      clearInterval(syncIntervalRef.current)
+                      syncIntervalRef.current = null
+                    }
 
-                  {isListening && (
-                    <View style={styles.listeningIndicator}>
-                      <FontAwesome name="volume-up" size={16} color={Colors.light.tint} />
-                      <Text style={styles.listeningText}>Listening...</Text>
-                    </View>
-                  )}
+                    // Reload tasks after a delay to allow backend processing
+                    // The backend needs to: 1) solve the task, 2) create solution, 3) processor creates timeline
+                    // This can take 5-10 seconds, so we'll check multiple times
+                    let attempts = 0
+                    const maxAttempts = 30 // Check for up to 30 seconds (solver can take 20-30 seconds)
+                    const checkInterval = setInterval(async () => {
+                      attempts++
+                      console.log(`🔄 Checking for timeline update (attempt ${attempts}/${maxAttempts})...`)
+                      
+                      // Sync from task_solution table (same as web app)
+                      const result = await syncTasksFromSupabase()
+                      
+                      if (result.success && result.taskCount > 0) {
+                        console.log(`✅ Synced ${result.taskCount} tasks! Reloading calendar...`)
+                        // Reload tasks from internalDB
+                        loadTasks()
+                        clearInterval(checkInterval)
+                        syncIntervalRef.current = null
+                        return
+                      } else if (result.success && result.taskCount === 0) {
+                        console.log('⏳ No tasks found yet, solver may still be processing...')
+                      } else {
+                        console.log(`⏳ Sync failed or no tasks: ${result.error || 'no tasks'}`)
+                      }
 
-                  {isProcessing && (
-                    <View style={styles.processingIndicator}>
-                      <FontAwesome name="cog" size={16} color={Colors.light.tint} />
-                      <Text style={styles.processingText}>AI is processing your request...</Text>
-                    </View>
-                  )}
-
-                  <View style={styles.examplesContainer}>
-                    <Text style={[styles.examplesTitle, { color: actualTheme === 'dark' ? '#aaa' : '#666' }]}>Example phrases:</Text>
-                    <TouchableOpacity 
-                      onPress={() => setTaskInputText('Doctor appointment at 10am')}
-                    >
-                      <GlassMorphism style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'transparent' }]} intensity={actualTheme === 'dark' ? 'medium' : 'light'} borderRadius={20}>
-                        <Text style={[styles.exampleText, { color: actualTheme === 'dark' ? '#ccc' : '#666' }]}>"Doctor appointment at 10am"</Text>
-                      </GlassMorphism>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      onPress={() => setTaskInputText('Team lunch from 12pm to 1pm')}
-                    >
-                      <GlassMorphism style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'transparent' }]} intensity={actualTheme === 'dark' ? 'medium' : 'light'} borderRadius={20}>
-                        <Text style={[styles.exampleText, { color: actualTheme === 'dark' ? '#ccc' : '#666' }]}>"Team lunch from 12pm to 1pm"</Text>
-                      </GlassMorphism>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      onPress={() => setTaskInputText('Study for exam for 2 hours in the evening')}
-                    >
-                      <GlassMorphism style={[styles.exampleChip, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'transparent' }]} intensity={actualTheme === 'dark' ? 'medium' : 'light'} borderRadius={20}>
-                        <Text style={[styles.exampleText, { color: actualTheme === 'dark' ? '#ccc' : '#666' }]}>"Study for exam for 2 hours in the evening"</Text>
-                      </GlassMorphism>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </GlassMorphism>
-            </TouchableOpacity>
+                      // If we've tried enough times, stop checking
+                      if (attempts >= maxAttempts) {
+                        console.log('⏰ Stopped checking for task updates')
+                        clearInterval(checkInterval)
+                        syncIntervalRef.current = null
+                        // Final sync attempt
+                        const finalResult = await syncTasksFromSupabase()
+                        if (finalResult.success && finalResult.taskCount > 0) {
+                          loadTasks()
+                        }
+                      }
+                    }, 1000)
+                    syncIntervalRef.current = checkInterval
+                  }}
+                />
+              </View>
+            </GlassMorphism>
           </KeyboardAvoidingView>
-        </TouchableOpacity>
+        </View>
       </Modal>
 
       {/* Floating Action Button */}
@@ -1489,6 +1567,16 @@ const styles = StyleSheet.create({
   todayButtonText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  deleteAllButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
+    marginHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 40,
+    minHeight: 40,
   },
   calendarGrid: {
     flexDirection: 'row',
@@ -1762,15 +1850,14 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: 'transparent',
-    justifyContent: 'flex-end',
   },
   modalKeyboardContainer: {
-    justifyContent: 'flex-end',
-    flex: 0,
+    flex: 1,
   },
   modalContentWrapper: {
     backgroundColor: 'transparent',
+    flex: 1,
+    height: '100%',
     overflow: 'hidden',
   },
   modalHeader: {
@@ -1781,6 +1868,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  chatContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
   },
   modalTitle: {
     fontSize: 16,
