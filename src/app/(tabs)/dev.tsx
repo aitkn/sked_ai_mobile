@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  Platform,
 } from 'react-native'
 import { Text } from '@/components/Themed'
 import { FontAwesome } from '@expo/vector-icons'
@@ -433,45 +434,55 @@ export default function DevScreen() {
 
   // Delete individual task
   const handleDeleteTask = async (taskId: string, taskName: string) => {
-    if (typeof window !== 'undefined') {
-      if (window.confirm(`Are you sure you want to delete "${taskName}"?`)) {
-        try {
-          setLoading(true)
-          await internalDB.deleteTask(taskId)
-          await loadTasks()
-          await loadActions()
-          window.alert(`Task "${taskName}" deleted successfully.`)
-        } catch (error: any) {
-          window.alert(`Failed to delete task: ${error.message}`)
-        } finally {
-          setLoading(false)
+    console.log('🗑️ handleDeleteTask called:', { taskId, taskName })
+    try {
+      if (Platform.OS === 'web') {
+        if (window.confirm(`Are you sure you want to delete "${taskName}"?`)) {
+          try {
+            setLoading(true)
+            await internalDB.deleteTask(taskId)
+            await loadTasks()
+            await loadActions()
+            window.alert(`Task "${taskName}" deleted successfully.`)
+          } catch (error: any) {
+            window.alert(`Failed to delete task: ${error.message}`)
+          } finally {
+            setLoading(false)
+          }
         }
-      }
-    } else {
-      Alert.alert(
-        'Delete Task',
-        `Are you sure you want to delete "${taskName}"?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                setLoading(true)
-                await internalDB.deleteTask(taskId)
-                await loadTasks()
-                await loadActions()
-                Alert.alert('Success', `Task "${taskName}" deleted successfully.`)
-              } catch (error: any) {
-                Alert.alert('Error', `Failed to delete task: ${error.message}`)
-              } finally {
-                setLoading(false)
+      } else {
+        console.log('🗑️ Showing Alert.alert for delete confirmation')
+        Alert.alert(
+          'Delete Task',
+          `Are you sure you want to delete "${taskName}"?`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => console.log('🗑️ Delete cancelled') },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: async () => {
+                console.log('🗑️ Delete confirmed, deleting task:', taskId)
+                try {
+                  setLoading(true)
+                  await internalDB.deleteTask(taskId)
+                  console.log('🗑️ Task deleted from DB, reloading...')
+                  await loadTasks()
+                  await loadActions()
+                  Alert.alert('Success', `Task "${taskName}" deleted successfully.`)
+                } catch (error: any) {
+                  console.error('🗑️ Error deleting task:', error)
+                  Alert.alert('Error', `Failed to delete task: ${error.message}`)
+                } finally {
+                  setLoading(false)
+                }
               }
             }
-          }
-        ]
-      )
+          ]
+        )
+      }
+    } catch (error: any) {
+      console.error('🗑️ Error in handleDeleteTask:', error)
+      Alert.alert('Error', `Failed to show delete dialog: ${error.message}`)
     }
   }
 
@@ -1232,11 +1243,7 @@ export default function DevScreen() {
                         alignItems: 'center'
                       }}
                       onPress={() => {
-                        if (typeof window !== 'undefined') {
-                          window.alert(`Delete ${task.name}`)
-                        } else {
-                          Alert.alert('Delete', `Delete ${task.name}`)
-                        }
+                        console.log('🗑️ DELETE button pressed for task:', task.id, task.name)
                         handleDeleteTask(task.id, task.name)
                       }}
                     >
