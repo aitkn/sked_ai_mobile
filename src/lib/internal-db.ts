@@ -241,8 +241,18 @@ export class InternalDB {
   }
 
   // Save/update a task (upsert functionality)
-  async saveTask(taskData: Partial<InternalTask> & { id: string; name: string; start_time: string; end_time: string }): Promise<InternalTask> {
+  // If skipIfDeleted is true, don't restore tasks that are marked as deleted
+  async saveTask(taskData: Partial<InternalTask> & { id: string; name: string; start_time: string; end_time: string }, skipIfDeleted: boolean = false): Promise<InternalTask | null> {
     await this.loadTasks()
+    
+    // Check if task is marked as deleted
+    if (skipIfDeleted) {
+      const isDeleted = await this.isTaskDeleted(taskData.id)
+      if (isDeleted) {
+        console.log(`⏭️ Skipping saveTask for deleted task: ${taskData.name} (${taskData.id})`)
+        return null
+      }
+    }
     
     const existingIndex = this.tasks.findIndex(task => task.id === taskData.id)
     const now = new Date().toISOString()
@@ -256,7 +266,10 @@ export class InternalDB {
       }
       this.tasks[existingIndex] = updatedTask
       await this.saveTasks()
-      await this.unmarkTaskDeleted(updatedTask.id)
+      // Only unmark as deleted if not skipping (i.e., user explicitly saved/updated)
+      if (!skipIfDeleted) {
+        await this.unmarkTaskDeleted(updatedTask.id)
+      }
       console.log('📝 Updated existing task in internal DB:', updatedTask.name)
       return updatedTask
     } else {
@@ -276,7 +289,10 @@ export class InternalDB {
       
       this.tasks.push(newTask)
       await this.saveTasks()
-      await this.unmarkTaskDeleted(newTask.id)
+      // Only unmark as deleted if not skipping (i.e., user explicitly saved/updated)
+      if (!skipIfDeleted) {
+        await this.unmarkTaskDeleted(newTask.id)
+      }
       console.log('➕ Added new task to internal DB:', newTask.name)
       return newTask
     }

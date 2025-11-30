@@ -22,7 +22,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { ExpoNotificationService } from '@/lib/notifications/expo-notifications'
 import * as Notifications from 'expo-notifications'
 import * as Speech from 'expo-speech'
-import { internalDB, InternalTask } from '@/lib/internal-db'
+import { internalDB, InternalTask, InternalDB } from '@/lib/internal-db'
 import { supabase } from '@/lib/supabase'
 import { useFocusEffect } from 'expo-router'
 import { GlassMorphism } from '@/components/GlassMorphism'
@@ -322,6 +322,13 @@ export default function ScheduleScreen() {
     
     for (const [taskId, timelineTask] of Array.from(timelineTaskMap)) {
       if (!existingTaskIds.has(taskId)) {
+        // Check if task was deleted before adding it back
+        const isDeleted = await internalDB.isTaskDeleted(taskId)
+        if (isDeleted) {
+          console.log(`⏭️ Skipping deleted task from timeline: ${timelineTask.name || taskId}`)
+          continue
+        }
+        
         const newTask = {
           id: taskId,
           name: timelineTask.name || timelineTask.title || 'Unnamed Task',

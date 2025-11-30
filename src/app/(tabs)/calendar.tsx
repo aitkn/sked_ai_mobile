@@ -1358,16 +1358,16 @@ export default function CalendarScreen() {
         transparent={true}
         onRequestClose={() => setShowTaskInput(false)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: actualTheme === 'dark' ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.6)' }]}>
+        <View style={[styles.modalContainer, { backgroundColor: '#ffffff' }]}>
           <KeyboardAvoidingView 
             style={styles.modalKeyboardContainer}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={0}
           >
             <GlassMorphism 
-              style={[styles.modalContentWrapper, { backgroundColor: actualTheme === 'dark' ? 'rgba(30,30,40,0.95)' : colors.background }]} 
+              style={[styles.modalContentWrapper, { backgroundColor: '#ffffff' }]} 
               intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} 
-              borderRadius={20}
+              borderRadius={0}
             >
               {/* Header with close button */}
               <View style={[styles.modalHeader, { backgroundColor: 'transparent', borderBottomColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
@@ -1386,6 +1386,7 @@ export default function CalendarScreen() {
               <View style={styles.chatContainer}>
                 <ChatAssistant 
                   initialMessage={`Schedule a task for ${selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`}
+                  onClose={() => setShowTaskInput(false)}
                   onTaskCreated={() => {
                     // Clear any existing sync interval before starting a new one
                     if (syncIntervalRef.current) {
@@ -1849,16 +1850,14 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    justifyContent: 'flex-end',
   },
   modalKeyboardContainer: {
-    justifyContent: 'flex-end',
     flex: 1,
   },
   modalContentWrapper: {
     backgroundColor: 'transparent',
     flex: 1,
-    maxHeight: '90%',
+    height: '100%',
     overflow: 'hidden',
   },
   modalHeader: {
@@ -1872,7 +1871,8 @@ const styles = StyleSheet.create({
   },
   chatContainer: {
     flex: 1,
-    minHeight: 400,
+    width: '100%',
+    height: '100%',
   },
   modalTitle: {
     fontSize: 16,

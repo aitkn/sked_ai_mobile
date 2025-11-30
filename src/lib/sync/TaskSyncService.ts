@@ -240,9 +240,16 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
       };
 
       // saveTask will upsert, but we log whether it's new or existing
+      // Pass skipIfDeleted=true to prevent restoring deleted tasks
       const wasExisting = existingTaskIds.has(ts.task_id);
       console.log(`[TaskSync]   ${wasExisting ? 'Updating' : 'Creating'} task in internalDB...`);
-      await internalDB.saveTask(internalTask);
+      const savedTask = await internalDB.saveTask(internalTask, true); // skipIfDeleted=true
+      
+      if (!savedTask) {
+        console.log(`[TaskSync] ⏭️ Skipped restoring deleted task: ${internalTask.name} (${ts.task_id})`);
+        skippedCount++;
+        continue;
+      }
       
       if (wasExisting) {
         console.log(`[TaskSync] ✅ Updated existing task: ${internalTask.name} (${ts.task_id})`);

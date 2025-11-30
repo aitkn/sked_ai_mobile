@@ -98,7 +98,7 @@ export class SyncService {
           // Handle deletion
           if (task.task_id) {
             await supabase
-              .from('tasks')
+              .from('task')
               .update({ deleted_at: task.deleted_at })
               .eq('task_id', task.task_id)
           }
@@ -112,7 +112,7 @@ export class SyncService {
           }
           
           const { error } = await supabase
-            .from('tasks')
+            .from('task')
             .update({
               name: task.name,
               task_json: taskJson,
@@ -129,7 +129,7 @@ export class SyncService {
         } else {
           // Check if task already exists with this local_id to prevent duplicates
           const { data: existingTask } = await supabase
-            .from('tasks')
+            .from('task')
             .select('task_id')
             .eq('local_id', task.local_id)
             .single()
@@ -147,7 +147,7 @@ export class SyncService {
             }
             
             const { data, error } = await supabase
-              .from('tasks')
+              .from('task')
               .insert({
                 user_id: userId,
                 name: task.name,
@@ -191,7 +191,7 @@ export class SyncService {
     
     // Get tasks updated since last sync
     const { data: remoteTasks, error } = await supabase
-      .from('tasks')
+      .from('task')
       .select('*')
       .eq('user_id', userId)
       .gte('updated_at', metadata.lastSyncAt)
