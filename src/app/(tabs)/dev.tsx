@@ -185,7 +185,14 @@ export default function DevScreen() {
         .order('created_at', { ascending: false })
         .limit(1)
       
-      if (error) throw error
+      if (error) {
+        // Handle permission errors gracefully - don't throw, just log and return
+        if (error.code === '42501' || error.message?.includes('permission denied')) {
+          console.warn('🔄 Auto-import skipped: Permission denied for user_timeline table. RLS policies may need to be configured.')
+          return
+        }
+        throw error
+      }
       
       if (!data || data.length === 0) {
         throw new Error('No timeline data found')
@@ -441,6 +448,7 @@ export default function DevScreen() {
           try {
             setLoading(true)
             await internalDB.deleteTask(taskId)
+            console.log('✅ Task deleted:', taskName)
             await loadTasks()
             await loadActions()
             window.alert(`Task "${taskName}" deleted successfully.`)
@@ -465,7 +473,7 @@ export default function DevScreen() {
                 try {
                   setLoading(true)
                   await internalDB.deleteTask(taskId)
-                  console.log('🗑️ Task deleted from DB, reloading...')
+                  console.log('✅ Task deleted:', taskName)
                   await loadTasks()
                   await loadActions()
                   Alert.alert('Success', `Task "${taskName}" deleted successfully.`)
@@ -761,7 +769,12 @@ export default function DevScreen() {
         .select('*')
         .limit(1)
       
-      console.log('skedai.user_timeline access:', { data: userTimelineData, error: userTimelineError })
+      // Handle permission errors gracefully in test output
+      if (userTimelineError && (userTimelineError.code === '42501' || userTimelineError.message?.includes('permission denied'))) {
+        console.log('skedai.user_timeline access: PERMISSION DENIED - RLS policies may need to be configured')
+      } else {
+        console.log('skedai.user_timeline access:', { data: userTimelineData, error: userTimelineError })
+      }
       
       // Test 3: Check auth.users table
       const { data: authUsersData, error: authUsersError } = await supabase
@@ -923,6 +936,15 @@ export default function DevScreen() {
       console.log('Timelines response - data:', timelineData, 'error:', timelineError)
       
       if (timelineError) {
+        // Handle permission errors gracefully
+        if (timelineError.code === '42501' || timelineError.message?.includes('permission denied')) {
+          Alert.alert(
+            'Permission Denied',
+            'Access to user_timeline table is denied. This may require database RLS policies to be configured. Please contact your administrator.',
+            [{ text: 'OK' }]
+          )
+          return
+        }
         console.error('Timeline listing error:', timelineError)
         throw new Error(`Failed to list timelines: ${timelineError.message} (Code: ${timelineError.code})`)
       }
@@ -1026,6 +1048,15 @@ export default function DevScreen() {
         .limit(1)
       
       if (error) {
+        // Handle permission errors gracefully
+        if (error.code === '42501' || error.message?.includes('permission denied')) {
+          Alert.alert(
+            'Permission Denied',
+            'Access to user_timeline table is denied. This may require database RLS policies to be configured. Please contact your administrator.',
+            [{ text: 'OK' }]
+          )
+          return
+        }
         throw error
       }
       

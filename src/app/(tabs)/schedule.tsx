@@ -185,6 +185,12 @@ export default function ScheduleScreen() {
         .single()
 
       if (error) {
+        // Handle permission errors gracefully
+        if (error.code === '42501' || error.message?.includes('permission denied')) {
+          console.warn('📡 Permission denied for user_timeline table. This may require database RLS policies to be set up.')
+          // Don't clear tasks on permission error - just skip timeline sync
+          return
+        }
         console.log('📡 No timeline found or error:', error.message)
         // No timeline found - clear all existing tasks to show empty schedule
         console.log('📡 No timeline found, clearing all existing tasks...')

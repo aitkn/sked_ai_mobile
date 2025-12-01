@@ -220,25 +220,33 @@ VALIDATION BEFORE create_schedule:
    - Conditions: "if it's warm" → "temp_c >= 20°C"
    - Preferences: "during daylight" → "is_day == true"
 
-2. **Infer implicit information**: Consider what the user might mean
+2. **Handle follow-up messages**: When user provides additional information in a follow-up message, apply it to the most recent task request
+   - If you asked "How long?" and user responds "2 hours" → use "duration == 2h" for the task you were discussing
+   - If you asked "What time?" and user responds "6pm" → use "start == <DATE>T18:00" for the task
+   - ALWAYS include ALL information from the ENTIRE conversation when creating a task
+   - Review the full conversation history before creating any task to ensure you capture all details
+
+3. **Infer implicit information**: Consider what the user might mean
    - "morning workout" might imply "start_time >= 06:00 & start_time <= 09:00"
    - "lunch meeting" might imply "start_time >= 12:00 & start_time <= 13:00"
    - "outdoor task" might imply temperature or daylight constraints
 
-3. **Confirm before creating** (unless absolutely obvious):
+4. **Confirm before creating** (unless absolutely obvious):
    - Show human-readable constraints to user
    - Example: "I'll create a task with these constraints: starts tomorrow at 2pm, duration 1 hour, temperature above 20°C. Is this correct?"
    - Wait for user confirmation or corrections
    - Only skip confirmation for very simple, unambiguous tasks
 
-4. **Ask when uncertain**: If user request is ambiguous or missing information, ask clarifying questions
+5. **Ask when uncertain**: If user request is ambiguous or missing information, ask clarifying questions
    - "Should this be during business hours?"
    - "Do you want this scheduled for a specific time or just sometime today?"
    - "Should I add any temperature or weather constraints?"
 
-5. **All constraints go in the constraints array**: Never use separate fields for duration, time, etc.
+6. **All constraints go in the constraints array**: Never use separate fields for duration, time, etc.
+   - Duration MUST be in constraints: "duration == 2h" (NOT in a separate duration field)
+   - When user says "2 hours" in a follow-up, add "duration == 2h" to the constraints array
 
-6. **Always create entities**: Every task needs at least one entity (person or object performing it)
+7. **Always create entities**: Every task needs at least one entity (person or object performing it)
 
 ## Enabled Features
 
@@ -934,7 +942,7 @@ ${userMessage}`;
       throw new Error('Invalid payload: tasks must be a non-empty array');
     }
 
-    // Validate each task has required fields
+    // Validate each task has required fields and fix duration
     for (const task of normalizedPayload.tasks) {
       if (!task.entity_names || !Array.isArray(task.entity_names) || task.entity_names.length === 0) {
         console.error('[AssistantService] Invalid task: missing entity_names', task);
@@ -943,6 +951,19 @@ ${userMessage}`;
       if (!task.location_name || typeof task.location_name !== 'string') {
         console.error('[AssistantService] Invalid task: missing location_name', task);
         throw new Error(`Task "${task.name || 'unnamed'}" is missing required location_name`);
+      }
+
+      // Fix: Ensure duration is in constraints if provided as a field
+      if (typeof task.duration === 'number' && task.duration > 0) {
+        if (!task.constraints) {
+          task.constraints = [];
+        }
+        // Check if duration constraint already exists
+        const hasDurationConstraint = task.constraints.some((c: string) => c.includes('duration'));
+        if (!hasDurationConstraint) {
+          console.log(`[AssistantService] Moving duration (${task.duration}m) to constraints for task "${task.name}"`);
+          task.constraints.push(`duration == ${task.duration}m`);
+        }
       }
     }
 

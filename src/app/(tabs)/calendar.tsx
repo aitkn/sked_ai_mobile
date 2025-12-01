@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View, Pressable } from 'react-native';
+import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, View, Pressable, SafeAreaView } from 'react-native';
 import { Text } from '@/components/Themed';
 import { useState, useEffect, useRef } from 'react';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
@@ -1010,7 +1010,7 @@ export default function CalendarScreen() {
            style={[
              styles.tasksSection, 
              viewMode === 'day' && styles.tasksSectionDayView
-           ]} 
+           ] as any} 
            borderRadius={20}
          >
           <GlassMorphism 
@@ -1355,39 +1355,30 @@ export default function CalendarScreen() {
       <Modal
         visible={showTaskInput}
         animationType="slide"
-        transparent={true}
+        transparent={false}
         onRequestClose={() => setShowTaskInput(false)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: '#ffffff' }]}>
-          <KeyboardAvoidingView 
-            style={styles.modalKeyboardContainer}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={0}
-          >
-            <GlassMorphism 
-              style={[styles.modalContentWrapper, { backgroundColor: '#ffffff' }]} 
-              intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} 
-              borderRadius={0}
+        <SafeAreaView style={styles.modalContainer}>
+          {/* Header with close button */}
+          <View style={[styles.modalHeader, { borderBottomColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
+            <Text style={[styles.modalTitle, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>
+              AI Assistant - {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </Text>
+            <TouchableOpacity 
+              onPress={() => setShowTaskInput(false)}
+              style={styles.cancelButton}
             >
-              {/* Header with close button */}
-              <View style={[styles.modalHeader, { backgroundColor: 'transparent', borderBottomColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
-                <Text style={[styles.modalTitle, { color: actualTheme === 'dark' ? '#fff' : '#333' }]}>
-                  AI Assistant - {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </Text>
-                <TouchableOpacity 
-                  onPress={() => setShowTaskInput(false)}
-                  style={styles.cancelButton}
-                >
-                  <FontAwesome name="times" size={20} color={actualTheme === 'dark' ? '#fff' : '#666'} />
-                </TouchableOpacity>
-              </View>
+              <FontAwesome name="times" size={20} color={actualTheme === 'dark' ? '#fff' : '#666'} />
+            </TouchableOpacity>
+          </View>
 
-              {/* Chat Assistant Component */}
-              <View style={styles.chatContainer}>
-                <ChatAssistant 
-                  initialMessage={`Schedule a task for ${selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`}
-                  onClose={() => setShowTaskInput(false)}
-                  onTaskCreated={() => {
+          {/* Chat Assistant Component */}
+          <View style={styles.chatContainer}>
+            <ChatAssistant 
+              initialMessage={`Schedule a task for ${selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`}
+              onClose={() => setShowTaskInput(false)}
+              hideHeader={true}
+              onTaskCreated={() => {
                     // Clear any existing sync interval before starting a new one
                     if (syncIntervalRef.current) {
                       clearInterval(syncIntervalRef.current)
@@ -1434,10 +1425,8 @@ export default function CalendarScreen() {
                     syncIntervalRef.current = checkInterval
                   }}
                 />
-              </View>
-            </GlassMorphism>
-          </KeyboardAvoidingView>
-        </View>
+          </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Floating Action Button */}
@@ -1850,29 +1839,20 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-  },
-  modalKeyboardContainer: {
-    flex: 1,
-  },
-  modalContentWrapper: {
-    backgroundColor: 'transparent',
-    flex: 1,
-    height: '100%',
-    overflow: 'hidden',
+    backgroundColor: '#ffffff',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: 'transparent',
+    backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: 'rgba(0,0,0,0.1)',
   },
   chatContainer: {
     flex: 1,
     width: '100%',
-    height: '100%',
   },
   modalTitle: {
     fontSize: 16,

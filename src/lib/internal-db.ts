@@ -236,7 +236,7 @@ export class InternalDB {
     await this.saveTasks()
     await this.markTasksDeleted([deletedTask.id])
     
-    console.log('🗑️ Deleted task from internal DB:', deletedTask.name)
+    console.log('✅ Task deleted:', deletedTask.name)
     return true
   }
 
