@@ -41,6 +41,7 @@ export default function CalendarScreen() {
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const syncIntervalRef = useRef<NodeJS.Timeout | number | null>(null);
   const monthPickerScrollRef = useRef<ScrollView>(null);
+  const timeGridScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -91,6 +92,22 @@ export default function CalendarScreen() {
       }, 100);
     }
   }, [monthPickerOpen, currentDate]);
+
+  // Scroll to 12 PM when week/3day/day view is shown
+  useEffect(() => {
+    if (['week', '3day', 'day'].includes(viewMode) && timeGridScrollRef.current) {
+      const HOUR_HEIGHT = 60;
+      const scrollTo12PM = 12 * HOUR_HEIGHT; // 12 PM is hour 12
+      
+      // Use setTimeout to ensure content is rendered before scrolling
+      setTimeout(() => {
+        timeGridScrollRef.current?.scrollTo({
+          y: scrollTo12PM,
+          animated: false, // Instant scroll on initial load
+        });
+      }, 100);
+    }
+  }, [viewMode]);
 
   const loadTasks = async () => {
     try {
@@ -587,225 +604,142 @@ export default function CalendarScreen() {
     return days;
   };
 
-  const renderWeekView = () => {
-    const weekDays = getWeekDays();
+  const renderTimeGrid = (days: Date[]) => {
+    const hours = Array.from({ length: 24 }, (_, i) => i);
+    const HOUR_HEIGHT = 60;
     const weekDayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    
+
     return (
-      <View style={styles.weekContainer}>
-        {/* Week day headers */}
-        <View style={styles.weekHeaderRow}>
-          {weekDayLabels.map((label, index) => (
-            <View key={label} style={styles.weekHeaderCell}>
-              <Text style={[styles.weekHeaderText, { color: colors.text }]}>{label}</Text>
-            </View>
-          ))}
-        </View>
-        
-        {/* Week day cells */}
-        <View style={styles.weekDaysRow}>
-          {weekDays.map((day, index) => {
-            const isToday = 
-              day.getDate() === new Date().getDate() && 
-              day.getMonth() === new Date().getMonth() && 
-              day.getFullYear() === new Date().getFullYear();
+      <View style={styles.weekViewContainer}>
+        {/* Header Row */}
+        <View style={[styles.weekHeaderRow, { marginBottom: 0, paddingLeft: 40 }]}>
+          {days.map((day, index) => {
+              const isToday = day.toDateString() === new Date().toDateString();
+              const isSelected = day.toDateString() === selectedDate.toDateString();
 
-            const isSelected = 
-              day.getDate() === selectedDate.getDate() && 
-              day.getMonth() === selectedDate.getMonth() && 
-              day.getFullYear() === selectedDate.getFullYear();
-
-            const hasTasks = hasTasksOnDate(day);
-            const dayTasks = getTasksForDate(day);
-
-            return (
-              <TouchableOpacity
-                key={index}
-                style={styles.weekDayCell}
-                onPress={() => {
-                  const newDate = new Date(day);
-                  setSelectedDate(newDate);
-                  updateViewsForSelectedDate(newDate);
-                }}
-              >
-                <View 
-                  style={[
-                    styles.weekDayCellContent,
-                    {
-                      backgroundColor: isSelected 
-                        ? colors.tint 
-                        : (isToday 
-                          ? actualTheme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(74,144,226,0.1)'
-                          : actualTheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.08)'
-                        ),
-                      borderColor: isSelected ? colors.tint : (isToday ? colors.tint + '80' : 'transparent'),
-                      borderWidth: isSelected || isToday ? 2 : 1,
-                    }
-                  ]}
+              return (
+                <TouchableOpacity
+                  key={index}
+                  style={[styles.weekHeaderCell, { paddingVertical: 4 }]}
+                  onPress={() => {
+                    const newDate = new Date(day);
+                    setSelectedDate(newDate);
+                    updateViewsForSelectedDate(newDate);
+                  }}
                 >
-                  {/* Day number */}
-                  <Text style={[
-                    styles.weekDayNumber,
-                    { 
-                      color: isSelected ? '#fff' : colors.text,
-                      fontWeight: isToday ? '800' : '600' 
-                    }
-                  ]}>
-                    {day.getDate()}
+                  <Text style={[styles.weekHeaderText, { color: isToday ? colors.tint : colors.text }]}>
+                    {weekDayLabels[day.getDay()]}
                   </Text>
-                  
-                  {/* Month label for first/last days */}
-                  {(index === 0 || day.getDate() === 1) && (
+                  <View style={[
+                    styles.weekHeaderDateContainer,
+                    isSelected && { backgroundColor: colors.tint + '20' }, 
+                    isToday && { backgroundColor: colors.tint }
+                  ]}>
                     <Text style={[
-                      styles.weekMonthLabel,
-                      { color: isSelected ? '#fff' : colors.textSecondary }
+                      styles.weekHeaderDateText, 
+                      { color: isToday ? '#fff' : colors.text }
                     ]}>
-                      {day.toLocaleDateString('en-US', { month: 'short' })}
+                      {day.getDate()}
                     </Text>
-                  )}
-                  
-                  {/* Task indicators */}
-                  {hasTasks && (
-                    <View style={styles.weekTaskIndicators}>
-                      {dayTasks.slice(0, 2).map((task, taskIndex) => (
-                        <View 
-                          key={task.id} 
-                          style={[
-                            styles.weekTaskDot,
-                            {
-                              backgroundColor: isSelected && task.status === 'pending' ? '#fff' : 
-                                             getPriorityColor(task, colors.tint),
-                            }
-                          ]} 
-                        />
-                      ))}
-                      {dayTasks.length > 2 && (
-                        <Text style={[
-                          styles.weekMoreTasks, 
-                          { color: isSelected ? '#fff' : colors.text }
-                        ]}>
-                          +{dayTasks.length - 2}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-    );
-  };
-
-  const render3DayView = () => {
-    const threeDays = get3DayDays();
-    const dayLabels = threeDays.map(day => day.toLocaleDateString('en-US', { weekday: 'short' }));
-    
-    return (
-      <View style={styles.threeDayContainer}>
-        {/* 3-day headers */}
-        <View style={styles.threeDayHeaderRow}>
-          {dayLabels.map((label, index) => (
-            <View key={label} style={styles.threeDayHeaderCell}>
-              <Text style={[styles.threeDayHeaderText, { color: colors.text }]}>{label}</Text>
-            </View>
-          ))}
+                  </View>
+                </TouchableOpacity>
+              );
+           })}
         </View>
         
-        {/* 3-day cells */}
-        <View style={styles.threeDayDaysRow}>
-          {threeDays.map((day, index) => {
-            const isToday = 
-              day.getDate() === new Date().getDate() && 
-              day.getMonth() === new Date().getMonth() && 
-              day.getFullYear() === new Date().getFullYear();
+        {/* Scrollable Grid */}
+        <ScrollView 
+          ref={timeGridScrollRef}
+          nestedScrollEnabled 
+          style={{ height: 600 }} 
+          showsVerticalScrollIndicator={false}
+          contentOffset={{ x: 0, y: 12 * 60 }} // Start at 12 PM
+        >
+           <View style={styles.weekGridContainer}>
+             {/* Time Labels */}
+             <View style={styles.timeColumn}>
+               {hours.map(hour => (
+                 <View key={hour} style={[styles.timeLabelCell, { height: HOUR_HEIGHT }]}>
+                   <Text style={[styles.timeLabelText, { color: colors.textSecondary, transform: [{ translateY: -6 }] }]}>
+                     {hour === 0 ? '' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`}
+                   </Text>
+                 </View>
+               ))}
+             </View>
 
-            const isSelected = 
-              day.getDate() === selectedDate.getDate() && 
-              day.getMonth() === selectedDate.getMonth() && 
-              day.getFullYear() === selectedDate.getFullYear();
-
-            const hasTasks = hasTasksOnDate(day);
-            const dayTasks = getTasksForDate(day);
-
-            return (
-              <TouchableOpacity
-                key={index}
-                style={styles.threeDayCell}
-                onPress={() => {
-                  const newDate = new Date(day);
-                  setSelectedDate(newDate);
-                  updateViewsForSelectedDate(newDate);
-                }}
-              >
-                <View 
-                  style={[
-                    styles.threeDayCellContent,
-                    {
-                      backgroundColor: isSelected 
-                        ? colors.tint 
-                        : (isToday 
-                          ? actualTheme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(74,144,226,0.1)'
-                          : actualTheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.08)'
-                        ),
-                      borderColor: isSelected ? colors.tint : (isToday ? colors.tint + '80' : 'transparent'),
-                      borderWidth: isSelected || isToday ? 2 : 1,
-                    }
-                  ]}
-                >
-                  {/* Day number */}
-                  <Text style={[
-                    styles.threeDayNumber,
-                    { 
-                      color: isSelected ? '#fff' : colors.text,
-                      fontWeight: isToday ? '800' : '600' 
-                    }
+             {/* Day Columns */}
+             {days.map((day, dayIndex) => {
+                const dayTasks = getTasksForDate(day);
+                const isToday = day.toDateString() === new Date().toDateString();
+                
+                return (
+                  <View key={dayIndex} style={[
+                      styles.dayColumn, 
+                      { 
+                        borderColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                        borderLeftWidth: 1,
+                        backgroundColor: isToday ? (actualTheme === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)') : 'transparent'
+                      }
                   ]}>
-                    {day.getDate()}
-                  </Text>
-                  
-                  {/* Month label */}
-                  <Text style={[
-                    styles.threeDayMonthLabel,
-                    { color: isSelected ? '#fff' : colors.textSecondary }
-                  ]}>
-                    {day.toLocaleDateString('en-US', { month: 'short' })}
-                  </Text>
-                  
-                  {/* Task indicators */}
-                  {hasTasks && (
-                    <View style={styles.threeDayTaskIndicators}>
-                      {dayTasks.slice(0, 3).map((task, taskIndex) => (
-                        <View 
-                          key={task.id} 
-                          style={[
-                            styles.threeDayTaskDot,
-                            {
-                              backgroundColor: isSelected && task.status === 'pending' ? '#fff' : 
-                                             getPriorityColor(task, colors.tint),
-                            }
-                          ]} 
-                        />
-                      ))}
-                      {dayTasks.length > 3 && (
-                        <Text style={[
-                          styles.threeDayMoreTasks, 
-                          { color: isSelected ? '#fff' : colors.text }
-                        ]}>
-                          +{dayTasks.length - 3}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                    {/* Grid Lines */}
+                    {hours.map(hour => (
+                       <View key={hour} style={[
+                         styles.gridCell, 
+                         { 
+                           height: HOUR_HEIGHT, 
+                           borderColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' 
+                         }
+                       ]} />
+                    ))}
+
+                    {/* Tasks */}
+                    {dayTasks.map(task => {
+                       const start = new Date(task.start_time);
+                       const end = new Date(task.end_time);
+                       const startHour = start.getHours();
+                       const startMin = start.getMinutes();
+                       let durationMin = (end.getTime() - start.getTime()) / (1000 * 60);
+                       if (durationMin < 15) durationMin = 15; 
+                       
+                       const top = (startHour * HOUR_HEIGHT) + ((startMin / 60) * HOUR_HEIGHT);
+                       const height = (durationMin / 60) * HOUR_HEIGHT;
+
+                       return (
+                         <TouchableOpacity
+                           key={task.id}
+                           style={[
+                             styles.weekTaskBox,
+                             {
+                               top,
+                               height: height - 1,
+                               backgroundColor: getPriorityColor(task, colors.tint),
+                             }
+                           ]}
+                           onPress={() => handleTaskPress(task)}
+                         >
+                           <Text numberOfLines={1} style={styles.weekTaskText}>
+                             {task.name}
+                           </Text>
+                           {height > 30 && (
+                              <Text numberOfLines={1} style={[styles.weekTaskText, { opacity: 0.8, fontSize: 8 }]}>
+                                {start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              </Text>
+                           )}
+                         </TouchableOpacity>
+                       );
+                    })}
+                  </View>
+                );
+             })}
+           </View>
+        </ScrollView>
       </View>
     );
   };
+
+  const renderWeekView = () => renderTimeGrid(getWeekDays());
+  const render3DayView = () => renderTimeGrid(get3DayDays());
+  const renderDayView = () => renderTimeGrid([selectedDate]);
 
 
   return (
@@ -923,34 +857,11 @@ export default function CalendarScreen() {
          ) : viewMode === '3day' ? (
            render3DayView()
          ) : (
-           <View style={styles.dayContainer}>
-             <View style={styles.dayHeader}>
-               <Text style={[styles.dayHeaderText, { color: colors.text }]}>
-                 {selectedDate.toLocaleDateString('en-US', { 
-                   weekday: 'long', 
-                   month: 'long', 
-                   day: 'numeric',
-                   year: 'numeric'
-                 })}
-               </Text>
-               {(() => {
-                 const isToday = 
-                   selectedDate.getDate() === new Date().getDate() && 
-                   selectedDate.getMonth() === new Date().getMonth() && 
-                   selectedDate.getFullYear() === new Date().getFullYear();
-                 
-                 return isToday && (
-                   <View style={[styles.todayBadge, { backgroundColor: colors.tint }]}>
-                     <Text style={styles.todayBadgeText}>Today</Text>
-                   </View>
-                 );
-               })()}
-             </View>
-           </View>
+           renderDayView()
         )}
       </GlassMorphism>
 
-         <GlassMorphism 
+         {/* <GlassMorphism 
            intensity={actualTheme === 'dark' ? 'extra-strong' : 'strong'} 
            style={[
              styles.tasksSection, 
@@ -1170,7 +1081,7 @@ export default function CalendarScreen() {
             })()}
           </View>
            )}
-        </GlassMorphism>
+        </GlassMorphism> */}
       </ScrollView>
 
        {selectedTask && (
@@ -2580,5 +2491,60 @@ const styles = StyleSheet.create({
   },
   monthPickerMonthText: {
     fontSize: 14,
+  },
+  // New Week View Styles
+  weekViewContainer: {
+    flex: 1,
+  },
+  weekHeaderDateContainer: {
+    marginTop: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 24,
+  },
+  weekHeaderDateText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  weekGridContainer: {
+    flexDirection: 'row',
+    flex: 1,
+  },
+  timeColumn: {
+    width: 40,
+    paddingRight: 4,
+  },
+  timeLabelCell: {
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingRight: 4,
+  },
+  timeLabelText: {
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  dayColumn: {
+    flex: 1,
+    borderLeftWidth: 1,
+  },
+  gridCell: {
+    borderBottomWidth: 1,
+  },
+  weekTaskBox: {
+    position: 'absolute',
+    left: 1,
+    right: 1,
+    borderRadius: 4,
+    padding: 2,
+    zIndex: 10,
+    justifyContent: 'center',
+  },
+  weekTaskText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#fff',
   },
 });
