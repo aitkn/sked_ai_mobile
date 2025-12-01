@@ -17,6 +17,16 @@ import { useFocusEffect } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
 
+// Configure notification handler for Expo
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+})
+
 // Timeline interfaces
 interface TimelineTask {
   id?: string
@@ -67,12 +77,29 @@ export default function DevScreen() {
     checkNotificationPermissions()
     loadScheduledNotifications()
     
+    // Set up notification listeners
+    const receivedSubscription = Notifications.addNotificationReceivedListener(notification => {
+      const now = new Date()
+      console.log('📬 Notification received at:', now.toLocaleTimeString())
+      console.log('   Title:', notification.request.content.title)
+      console.log('   Body:', notification.request.content.body)
+      // Don't show alert - let the notification banner show naturally
+    })
+
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('👆 Notification tapped:', response.notification.request.content.title)
+    })
+    
     // Refresh notification list every 10 seconds
     const notificationInterval = setInterval(() => {
       loadScheduledNotifications()
     }, 10000)
     
-    return () => clearInterval(notificationInterval)
+    return () => {
+      clearInterval(notificationInterval)
+      receivedSubscription.remove()
+      responseSubscription.remove()
+    }
   }, [])
 
   // Auto-import timer system
@@ -280,17 +307,77 @@ export default function DevScreen() {
   // Schedule a test notification
   const scheduleTestNotification = async (delaySeconds: number) => {
     try {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: `Test Notification (${delaySeconds}s delay)`,
-          body: `This notification was scheduled ${delaySeconds} seconds ago`,
-          data: { type: 'test', delay: delaySeconds },
-        },
-        trigger: delaySeconds > 0 ? { seconds: delaySeconds } as any : null,
-      })
+      // First, check and request permissions
+      const { status: existingStatus } = await Notifications.getPermissionsAsync()
+      let finalStatus = existingStatus
       
-      console.log(`✅ Scheduled test notification with ${delaySeconds}s delay`)
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync()
+        finalStatus = status
+      }
+      
+      if (finalStatus !== 'granted') {
+        Alert.alert(
+          'Permission Denied',
+          'Notification permissions are required to test notifications. Please enable them in Settings.',
+          [{ text: 'OK' }]
+        )
+        await checkNotificationPermissions()
+        return
+      }
+
+      // For immediate notifications (0s delay), use displayNotificationAsync instead
+      if (delaySeconds === 0) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `Test Notification (Immediate)`,
+            body: `This is an immediate test notification`,
+            data: { type: 'test', delay: 0 },
+            sound: true,
+          },
+          trigger: null, // null = immediate
+        })
+        console.log(`✅ Scheduled immediate test notification`)
+      } else {
+        const now = Date.now()
+        const triggerDate = new Date(now + delaySeconds * 1000)
+        const scheduledAt = new Date(now)
+        const scheduledAtStr = scheduledAt.toLocaleTimeString()
+        const willFireAtStr = triggerDate.toLocaleTimeString()
+        const delayMs = delaySeconds * 1000
+        
+        console.log(`⏰ Scheduling notification:`)
+        console.log(`   - Current time: ${scheduledAtStr} (${now}ms)`)
+        console.log(`   - Trigger time: ${willFireAtStr} (${triggerDate.getTime()}ms)`)
+        console.log(`   - Delay: ${delaySeconds} seconds (${delayMs}ms)`)
+        
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `Test Notification (${delaySeconds}s delay)`,
+            body: `Scheduled at ${scheduledAtStr}, will appear at ${willFireAtStr}`,
+            data: { type: 'test', delay: delaySeconds },
+            sound: true,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: delaySeconds,
+            repeats: false,
+          },
+        })
+        
+        console.log(`✅ Notification scheduled successfully`)
+        console.log(`   - It will appear in ${delaySeconds} seconds`)
+        
+        // Show a confirmation that it was scheduled (not that it appeared)
+        Alert.alert(
+          'Notification Scheduled',
+          `A notification will appear in ${delaySeconds} seconds.\n\nScheduled at: ${scheduledAtStr}\nWill appear at: ${willFireAtStr}`,
+          [{ text: 'OK' }]
+        )
+      }
+      
       await loadScheduledNotifications()
+      await checkNotificationPermissions()
       
     } catch (error: any) {
       console.error('❌ Failed to schedule test notification:', error)
