@@ -37,7 +37,10 @@ export default function CalendarScreen() {
     const today = new Date();
     return new Date(today);
   });
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const syncIntervalRef = useRef<NodeJS.Timeout | number | null>(null);
+  const monthPickerScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -67,6 +70,27 @@ export default function CalendarScreen() {
       }
     };
   }, []);
+
+  // Scroll to current year when month picker opens
+  useEffect(() => {
+    if (monthPickerOpen && monthPickerScrollRef.current) {
+      // Calculate scroll position to current year (the year being viewed)
+      // Each year section is approximately: year label (50px) + 3 rows of months (3 * 70px) = ~260px
+      const viewingYear = currentDate.getFullYear();
+      const startYear = viewingYear - 5;
+      const yearIndex = viewingYear - startYear;
+      const estimatedSectionHeight = 260; // Approximate height per year section
+      const scrollPosition = yearIndex * estimatedSectionHeight;
+      
+      // Use setTimeout to ensure content is rendered before scrolling
+      setTimeout(() => {
+        monthPickerScrollRef.current?.scrollTo({
+          y: scrollPosition,
+          animated: true,
+        });
+      }, 100);
+    }
+  }, [monthPickerOpen, currentDate]);
 
   const loadTasks = async () => {
     try {
@@ -801,30 +825,34 @@ export default function CalendarScreen() {
       )}
       
       <ScrollView style={styles.scrollView}>
-        <GlassMorphism intensity={actualTheme === 'dark' ? 'strong' : 'strong'} style={styles.header}>
-          <Text style={[styles.title, { color: colors.text }]}>Calendar</Text>
-          <Text style={[styles.subtitle, { color: colors.text }]}>
-            {selectedDate.toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}
-          </Text>
-        </GlassMorphism>
-      
       <GlassMorphism intensity={actualTheme === 'dark' ? 'strong' : 'strong'} style={styles.calendarContainer} borderRadius={20}>
         <GlassMorphism intensity={actualTheme === 'dark' ? 'light' : 'medium'} style={styles.monthNavigation} borderRadius={12}>
           <View style={styles.navigationHeader}>
-            <GlassMorphism 
-              intensity={actualTheme === 'dark' ? 'light' : 'strong'} 
-              style={styles.monthTitleContainer} 
-              borderRadius={8}
+            <TouchableOpacity 
+              onPress={() => setDrawerOpen(true)}
+              style={styles.hamburgerButton}
             >
-              <Text style={[styles.monthText, { color: colors.text }]}>
+              <Ionicons 
+                name="menu" 
+                size={22} 
+                color={colors.text}
+              />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={() => setMonthPickerOpen(true)}
+              style={styles.monthTitleButton}
+              activeOpacity={0.7}
+            >
+              <Text 
+                style={[styles.monthText, { color: colors.text }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit={true}
+                minimumFontScale={0.8}
+              >
                 {viewMode === 'month' 
                   ? currentDate.toLocaleDateString('en-US', { 
-                      month: 'long', 
+                      month: 'short', 
                       year: 'numeric' 
                     })
                   : viewMode === 'week'
@@ -832,140 +860,57 @@ export default function CalendarScreen() {
                   : viewMode === '3day'
                   ? `${current3DayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(current3DayStart.getTime() + 2 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                   : selectedDate.toLocaleDateString('en-US', { 
-                      month: 'long', 
+                      month: 'short', 
                       day: 'numeric',
                       year: 'numeric'
                     })
                 }
               </Text>
-            </GlassMorphism>
-            <View style={styles.viewToggle}>
-            <TouchableOpacity 
-                onPress={() => setViewMode('month')}
-                style={[
-                  styles.viewModeButton, 
-                  { 
-                    backgroundColor: viewMode === 'month' 
-                      ? colors.tint 
-                      : actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' 
-                  }
-                ]}
-              >
-                <Text style={[
-                  styles.viewToggleText, 
-                  { color: viewMode === 'month' ? '#fff' : colors.text }
-                ]}>
-                  Month
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                onPress={() => {
-                  setViewMode('week');
-                  updateViewsForSelectedDate(selectedDate);
-                }}
-                style={[
-                  styles.viewModeButton, 
-                  { 
-                    backgroundColor: viewMode === 'week' 
-                      ? colors.tint 
-                      : actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' 
-                  }
-                ]}
-              >
-                <Text style={[
-                  styles.viewToggleText, 
-                  { color: viewMode === 'week' ? '#fff' : colors.text }
-                ]}>
-                  Week
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                onPress={() => {
-                  setViewMode('3day');
-                  updateViewsForSelectedDate(selectedDate);
-                }}
-                style={[
-                  styles.viewModeButton, 
-                  { 
-                    backgroundColor: viewMode === '3day' 
-                      ? colors.tint 
-                      : actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' 
-                  }
-                ]}
-              >
-                <Text style={[
-                  styles.viewToggleText, 
-                  { color: viewMode === '3day' ? '#fff' : colors.text }
-                ]}>
-                  3-Day
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                onPress={() => setViewMode('day')}
-                style={[
-                  styles.viewModeButton, 
-                  { 
-                    backgroundColor: viewMode === 'day' 
-                      ? colors.tint 
-                      : actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' 
-                  }
-                ]}
-              >
-                <Text style={[
-                  styles.viewToggleText, 
-                  { color: viewMode === 'day' ? '#fff' : colors.text }
-                ]}>
-                  Day
-              </Text>
+              <Ionicons 
+                name="chevron-down" 
+                size={14} 
+                color={colors.text}
+                style={styles.monthChevron}
+              />
             </TouchableOpacity>
+            
+            <View style={styles.navigationControls}>
+              <TouchableOpacity 
+                onPress={() => {
+                  switch (viewMode) {
+                    case 'month': navigateMonth('prev'); break;
+                    case 'week': navigateWeek('prev'); break;
+                    case '3day': navigate3Day('prev'); break;
+                    case 'day': navigateDay('prev'); break;
+                  }
+                }} 
+                style={styles.arrowButton}
+              >
+                <Ionicons 
+                  name="chevron-back" 
+                  size={20} 
+                  color={colors.text}
+                />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                onPress={jumpToToday}
+                style={[styles.todayButton, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
+              >
+                <Text style={[styles.todayButtonText, { color: colors.text }]}>Today</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                onPress={() => navigateMonth('next')}
+                style={styles.arrowButton}
+              >
+                <Ionicons 
+                  name="chevron-forward" 
+                  size={20} 
+                  color={colors.text}
+                />
+              </TouchableOpacity>
             </View>
-          </View>
-          <View style={styles.monthArrows}>
-            <TouchableOpacity 
-              onPress={() => {
-                switch (viewMode) {
-                  case 'month': navigateMonth('prev'); break;
-                  case 'week': navigateWeek('prev'); break;
-                  case '3day': navigate3Day('prev'); break;
-                  case 'day': navigateDay('prev'); break;
-                }
-              }} 
-              style={styles.arrowButton}
-            >
-              <Ionicons 
-                name="chevron-back" 
-                size={24} 
-                color={colors.text}
-              />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              onPress={jumpToToday}
-              style={[styles.todayButton, { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
-            >
-              <Text style={[styles.todayButtonText, { color: colors.text }]}>Today</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              onPress={() => {
-                switch (viewMode) {
-                  case 'month': navigateMonth('next'); break;
-                  case 'week': navigateWeek('next'); break;
-                  case '3day': navigate3Day('next'); break;
-                  case 'day': navigateDay('next'); break;
-                }
-              }} 
-              style={styles.arrowButton}
-            >
-              <Ionicons 
-                name="chevron-forward" 
-                size={24} 
-                color={colors.text}
-              />
-            </TouchableOpacity>
           </View>
         </GlassMorphism>
 
@@ -1448,6 +1393,268 @@ export default function CalendarScreen() {
           containerStyle={{ padding: 0, backgroundColor: 'transparent', borderWidth: 0 }}
         />
       </TouchableOpacity>
+
+      {/* Navigation Drawer */}
+      <Modal
+        visible={drawerOpen}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setDrawerOpen(false)}
+      >
+        <View style={styles.drawerOverlay}>
+          <Pressable 
+            style={StyleSheet.absoluteFill}
+            onPress={() => setDrawerOpen(false)}
+          />
+          <View 
+            style={[
+              styles.drawerContent,
+              { backgroundColor: actualTheme === 'dark' ? 'rgba(30, 30, 40, 0.98)' : 'rgba(255, 255, 255, 0.98)' }
+            ]}
+          >
+            <View style={styles.drawerHeader}>
+              <Text style={[styles.drawerTitle, { color: colors.text }]}>View Options</Text>
+              <TouchableOpacity 
+                onPress={() => setDrawerOpen(false)}
+                style={styles.drawerCloseButton}
+              >
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.drawerOptions}>
+              <TouchableOpacity
+                onPress={() => {
+                  setViewMode('month');
+                  setDrawerOpen(false);
+                }}
+                style={[
+                  styles.drawerOption,
+                  {
+                    backgroundColor: viewMode === 'month' 
+                      ? colors.tint 
+                      : 'transparent',
+                  }
+                ]}
+              >
+                <Ionicons 
+                  name="grid" 
+                  size={24} 
+                  color={viewMode === 'month' ? '#fff' : colors.text} 
+                />
+                <Text style={[
+                  styles.drawerOptionText,
+                  { color: viewMode === 'month' ? '#fff' : colors.text }
+                ]}>
+                  Month
+                </Text>
+                {viewMode === 'month' && (
+                  <Ionicons name="checkmark" size={20} color="#fff" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setViewMode('week');
+                  updateViewsForSelectedDate(selectedDate);
+                  setDrawerOpen(false);
+                }}
+                style={[
+                  styles.drawerOption,
+                  {
+                    backgroundColor: viewMode === 'week' 
+                      ? colors.tint 
+                      : 'transparent',
+                  }
+                ]}
+              >
+                <Ionicons 
+                  name="calendar" 
+                  size={24} 
+                  color={viewMode === 'week' ? '#fff' : colors.text} 
+                />
+                <Text style={[
+                  styles.drawerOptionText,
+                  { color: viewMode === 'week' ? '#fff' : colors.text }
+                ]}>
+                  Week
+                </Text>
+                {viewMode === 'week' && (
+                  <Ionicons name="checkmark" size={20} color="#fff" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setViewMode('3day');
+                  updateViewsForSelectedDate(selectedDate);
+                  setDrawerOpen(false);
+                }}
+                style={[
+                  styles.drawerOption,
+                  {
+                    backgroundColor: viewMode === '3day' 
+                      ? colors.tint 
+                      : 'transparent',
+                  }
+                ]}
+              >
+                <Ionicons 
+                  name="calendar-outline" 
+                  size={24} 
+                  color={viewMode === '3day' ? '#fff' : colors.text} 
+                />
+                <Text style={[
+                  styles.drawerOptionText,
+                  { color: viewMode === '3day' ? '#fff' : colors.text }
+                ]}>
+                  3 Day
+                </Text>
+                {viewMode === '3day' && (
+                  <Ionicons name="checkmark" size={20} color="#fff" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setViewMode('day');
+                  setDrawerOpen(false);
+                }}
+                style={[
+                  styles.drawerOption,
+                  {
+                    backgroundColor: viewMode === 'day' 
+                      ? colors.tint 
+                      : 'transparent',
+                  }
+                ]}
+              >
+                <Ionicons 
+                  name="today" 
+                  size={24} 
+                  color={viewMode === 'day' ? '#fff' : colors.text} 
+                />
+                <Text style={[
+                  styles.drawerOptionText,
+                  { color: viewMode === 'day' ? '#fff' : colors.text }
+                ]}>
+                  Day
+                </Text>
+                {viewMode === 'day' && (
+                  <Ionicons name="checkmark" size={20} color="#fff" />
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Month/Year Picker Modal */}
+      <Modal
+        visible={monthPickerOpen}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setMonthPickerOpen(false)}
+      >
+        <Pressable 
+          style={styles.monthPickerOverlay}
+          onPress={() => setMonthPickerOpen(false)}
+        >
+          <Pressable 
+            style={[
+              styles.monthPickerContent,
+              { backgroundColor: actualTheme === 'dark' ? 'rgba(30, 30, 40, 0.98)' : 'rgba(255, 255, 255, 0.98)' }
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.monthPickerHeader}>
+              <Text style={[styles.monthPickerTitle, { color: colors.text }]}>Select Month</Text>
+              <TouchableOpacity 
+                onPress={() => setMonthPickerOpen(false)}
+                style={styles.monthPickerCloseButton}
+              >
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView 
+              ref={monthPickerScrollRef}
+              style={styles.monthPickerScroll}
+              contentContainerStyle={styles.monthPickerScrollContent}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+            >
+              {(() => {
+                const months = [];
+                // Use the current date's year (the month being viewed), not today's year
+                const currentYear = currentDate.getFullYear();
+                const years = [];
+                
+                // Generate years (current year ± 5 years)
+                for (let year = currentYear - 5; year <= currentYear + 5; year++) {
+                  years.push(year);
+                }
+
+                const monthNames = [
+                  'January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December'
+                ];
+
+                return years.map((year) => (
+                  <View key={year} style={styles.monthPickerYearSection}>
+                    <Text style={[styles.monthPickerYearLabel, { color: colors.textSecondary }]}>
+                      {year}
+                    </Text>
+                    <View style={styles.monthPickerMonthsGrid}>
+                      {monthNames.map((month, index) => {
+                        const isSelected = 
+                          currentDate.getFullYear() === year && 
+                          currentDate.getMonth() === index;
+                        const isCurrentMonth = 
+                          new Date().getFullYear() === year && 
+                          new Date().getMonth() === index;
+
+                        return (
+                          <TouchableOpacity
+                            key={`${year}-${index}`}
+                            onPress={() => {
+                              const newDate = new Date(year, index, 1);
+                              setCurrentDate(newDate);
+                              setSelectedDate(newDate);
+                              updateViewsForSelectedDate(newDate);
+                              setMonthPickerOpen(false);
+                            }}
+                            style={[
+                              styles.monthPickerMonthItem,
+                              {
+                                backgroundColor: isSelected 
+                                  ? colors.tint 
+                                  : isCurrentMonth
+                                  ? actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                                  : 'transparent',
+                              }
+                            ]}
+                          >
+                            <Text style={[
+                              styles.monthPickerMonthText,
+                              { 
+                                color: isSelected ? '#fff' : colors.text,
+                                fontWeight: isSelected ? '700' : isCurrentMonth ? '600' : '500'
+                              }
+                            ]}>
+                              {month.substring(0, 3)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ));
+              })()}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ThemedGradient>
   );
 }
@@ -1478,20 +1685,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-  header: {
-    padding: 20,
-    margin: 20,
-    marginBottom: 10,
-    borderRadius: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    opacity: 0.7,
+  hamburgerButton: {
+    padding: 8,
+    marginRight: 8,
   },
   calendarContainer: {
     margin: 20,
@@ -1499,62 +1695,59 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   monthNavigation: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 16,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 12,
   },
   navigationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    flexWrap: 'nowrap',
+  },
+  monthTitleButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginRight: 16,
-  },
-  viewToggle: {
-    flexDirection: 'row',
-    gap: 8,
-    marginLeft: 12,
-  },
-  viewModeButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    minWidth: 50,
-    alignItems: 'center',
-  },
-  viewToggleText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  monthTitleContainer: {
-    paddingHorizontal: 16,
+    justifyContent: 'center',
     paddingVertical: 8,
-    marginRight: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    flexShrink: 0,
+    minWidth: 100,
   },
   monthText: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
+    marginRight: 4,
+    flexShrink: 0,
   },
-  monthArrows: {
+  monthChevron: {
+    opacity: 0.6,
+  },
+  navigationControls: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    flexShrink: 0,
   },
   arrowButton: {
     padding: 8,
-    borderRadius: 20,
+    borderRadius: 8,
+    minWidth: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   todayButton: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 16,
-    marginHorizontal: 8,
+    borderRadius: 8,
+    minWidth: 60,
+    alignItems: 'center',
   },
   todayButtonText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   deleteAllButton: {
@@ -2268,5 +2461,124 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
     marginLeft: 12,
+  },
+  // Drawer styles
+  drawerOverlay: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  drawerContent: {
+    width: '75%',
+    maxWidth: 300,
+    height: '100%',
+    paddingTop: 60,
+    shadowColor: '#000',
+    shadowOffset: { width: 2, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  drawerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  drawerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  drawerCloseButton: {
+    padding: 4,
+  },
+  drawerOptions: {
+    paddingTop: 20,
+  },
+  drawerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginHorizontal: 12,
+    marginVertical: 4,
+    borderRadius: 12,
+  },
+  drawerOptionText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginLeft: 16,
+    flex: 1,
+  },
+  // Month picker styles
+  monthPickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  monthPickerContent: {
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '80%',
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  monthPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  monthPickerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  monthPickerCloseButton: {
+    padding: 4,
+  },
+  monthPickerScroll: {
+    maxHeight: 400,
+  },
+  monthPickerScrollContent: {
+    paddingBottom: 20,
+  },
+  monthPickerYearSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  monthPickerYearLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
+    opacity: 0.7,
+  },
+  monthPickerMonthsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  monthPickerMonthItem: {
+    width: '22%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  monthPickerMonthText: {
+    fontSize: 14,
   },
 });
