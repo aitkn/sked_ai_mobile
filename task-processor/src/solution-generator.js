@@ -173,14 +173,17 @@ export class SolutionGenerator {
     const definition = task.definition || {}
     
     // Determine duration (default 30 minutes)
+    // NOTE: Duration should come from constraints, not task name
+    // This is just a fallback for tasks without constraints
     let durationMinutes = 30
     
-    // Extract duration from task name or definition
+    // Extract duration from task name or definition (fallback only)
     const durationMatch = task.name.match(/(\d+)\s*(min|minute|minutes|hour|hours|hr)/i)
     if (durationMatch) {
       const num = parseInt(durationMatch[1])
       const unit = durationMatch[2].toLowerCase()
       durationMinutes = unit.startsWith('h') ? num * 60 : num
+      console.log(`📏 Extracted duration from task name: ${durationMinutes} minutes`)
     }
     
     // Determine task type and preferences
@@ -226,6 +229,11 @@ export class SolutionGenerator {
 
     const rules = safeParseJSON(task?.rules) || task?.rules
     const constraintArray = Array.isArray(rules?.constraints) ? rules.constraints : []
+    
+    console.log(`🔍 Extracting constraints from task "${task.name}":`, {
+      rules: rules,
+      constraints: constraintArray
+    })
 
     for (const rawConstraint of constraintArray) {
       if (typeof rawConstraint !== 'string') continue
@@ -233,17 +241,26 @@ export class SolutionGenerator {
       if (!trimmed) continue
 
       const match = trimmed.match(/^(start|end|duration)\s*([<>!=]+)\s*(.+)$/i)
-      if (!match) continue
+      if (!match) {
+        console.log(`⚠️ Constraint did not match regex: "${trimmed}"`)
+        continue
+      }
 
       const [, keyRaw, operatorRaw, valueRaw] = match
       const key = keyRaw.toLowerCase()
       const operator = operatorRaw.replace(/\s+/g, '')
       const value = valueRaw.trim()
+      
+      console.log(`🔍 Parsed constraint: key="${key}", operator="${operator}", value="${value}"`)
 
       if (key === 'duration') {
         const duration = parseDurationToMinutes(value)
+        console.log(`📏 Parsed duration constraint: "${value}" → ${duration} minutes`)
         if (duration) {
           result.durationMinutes = duration
+          console.log(`✅ Set durationMinutes to ${duration} minutes`)
+        } else {
+          console.warn(`⚠️ Failed to parse duration from: "${value}"`)
         }
         continue
       }
@@ -279,7 +296,16 @@ export class SolutionGenerator {
     const now = new Date()
     const nextInterval = getNextInterval(now)
 
+    // Prioritize constraint duration over analysis duration
+    // Constraints come from LLM/user input and should always take precedence
     let durationMinutes = constraints.durationMinutes || analysis.durationMinutes
+    console.log(`⏱️ Duration for "${analysis.originalTask.name}": constraints.durationMinutes=${constraints.durationMinutes}, analysis.durationMinutes=${analysis.durationMinutes}, final=${durationMinutes}`)
+    
+    if (constraints.durationMinutes && constraints.durationMinutes !== analysis.durationMinutes) {
+      console.log(`✅ Using constraint duration (${constraints.durationMinutes} min) instead of analysis duration (${analysis.durationMinutes} min)`)
+    } else if (!constraints.durationMinutes) {
+      console.warn(`⚠️ No duration constraint found, using analysis duration (${analysis.durationMinutes} min)`)
+    }
     let optimalStartTime = null
 
     if (constraints.startExact) {
