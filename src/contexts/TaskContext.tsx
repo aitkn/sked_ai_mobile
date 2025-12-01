@@ -129,6 +129,11 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
     // Delete task
     await syncService.deleteTask(localId)
     
+    const task = tasks.find(t => t.local_id === localId)
+    if (task) {
+      console.log('✅ Task deleted:', task.name || task.local_id)
+    }
+    
     await refreshTasks()
   }
 

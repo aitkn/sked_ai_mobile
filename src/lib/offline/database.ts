@@ -94,6 +94,7 @@ export class OfflineDatabase {
       task.sync_status = 'pending'
       await this.saveTasks(tasks)
       await this.addToSyncQueue(task)
+      console.log('✅ Task deleted:', task.name || localId)
     }
   }
 

@@ -32,11 +32,11 @@ interface ChatAssistantProps {
   onTaskCreated?: () => void;
   initialMessage?: string;
   onClose?: () => void;
+  hideHeader?: boolean;
 }
 
-export function ChatAssistant({ onTaskCreated, initialMessage, onClose }: ChatAssistantProps) {
+export function ChatAssistant({ onTaskCreated, initialMessage, onClose, hideHeader = false }: ChatAssistantProps) {
   const { actualTheme, colors } = useTheme();
-  const { height: windowHeight } = useWindowDimensions();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -144,7 +144,7 @@ export function ChatAssistant({ onTaskCreated, initialMessage, onClose }: ChatAs
   };
 
   return (
-    <View style={[styles.container, { height: windowHeight }]}>
+    <View style={styles.container}>
       <KeyboardAvoidingView 
         style={styles.keyboardView}
         contentContainerStyle={styles.keyboardContent}
@@ -152,23 +152,25 @@ export function ChatAssistant({ onTaskCreated, initialMessage, onClose }: ChatAs
         keyboardVerticalOffset={0}
       >
         {/* Header - Fixed at top */}
-        <View style={styles.headerSection}>
-          <View style={styles.headerContent}>
-            <Text style={styles.dateText}>{currentDate}</Text>
-            <View style={styles.statusContainer}>
-              <View style={styles.statusDot} />
-              <Text style={styles.statusText}>We're online</Text>
+        {!hideHeader && (
+          <View style={styles.headerSection}>
+            <View style={styles.headerContent}>
+              <Text style={styles.dateText}>{currentDate}</Text>
+              <View style={styles.statusContainer}>
+                <View style={styles.statusDot} />
+                <Text style={styles.statusText}>We're online</Text>
+              </View>
             </View>
+            {onClose && (
+              <TouchableOpacity 
+                onPress={onClose}
+                style={styles.closeButton}
+              >
+                <FontAwesome name="times" size={22} color="#666" />
+              </TouchableOpacity>
+            )}
           </View>
-          {onClose && (
-            <TouchableOpacity 
-              onPress={onClose}
-              style={styles.closeButton}
-            >
-              <FontAwesome name="times" size={22} color="#666" />
-            </TouchableOpacity>
-          )}
-        </View>
+        )}
 
         {/* Chat Card Container - wraps messages and input */}
         <View style={styles.chatCard}>
@@ -243,7 +245,7 @@ const styles = StyleSheet.create({
   // Main container - fills entire screen (100vh equivalent)
   container: {
     flex: 1,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#ffffff',
   },
   
   // Keyboard avoiding view - fills container
