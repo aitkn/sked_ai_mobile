@@ -12,6 +12,7 @@ import { ThemedGradient } from '@/components/ThemedGradient';
 import { internalDB, InternalTask, InternalDB } from '@/lib/internal-db';
 import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService';
 import { ChatAssistant } from '@/components/ChatAssistant';
+import { DEFAULT_TASK_COLOR } from '@/lib/offline/database';
 
 export default function CalendarScreen() {
   const { actualTheme, colors } = useTheme();
@@ -177,8 +178,14 @@ export default function CalendarScreen() {
     return filteredTasks;
   };
 
-  // Helper function to get priority-based color for pending tasks
-  const getPriorityColor = (task: InternalTask, themeColor: string): string => {
+  // Helper function to get color for tasks - uses custom color if set, otherwise priority-based
+  const getTaskColor = (task: InternalTask, themeColor: string): string => {
+    // If task has a custom color set, use it
+    if (task.color && task.color !== DEFAULT_TASK_COLOR) {
+      return task.color;
+    }
+    
+    // For status-based colors, always use them regardless of custom color
     if (task.status === 'completed') return '#4CAF50';
     if (task.status === 'in_progress') return '#FFA726';
     
@@ -328,6 +335,44 @@ export default function CalendarScreen() {
 
   const closeTaskDetails = () => {
     setSelectedTask(null);
+  };
+
+  // Update task color
+  const handleUpdateTaskColor = async (color: string) => {
+    if (!selectedTask) {
+      console.warn('No selected task to update color');
+      return;
+    }
+    
+    console.log('🎨 Updating task color:', { taskId: selectedTask.id, color });
+    
+    try {
+      const result = await internalDB.updateTask(selectedTask.id, { color });
+      console.log('✅ Task color updated successfully:', result);
+      
+      // Update selected task state immediately
+      setSelectedTask({ ...selectedTask, color });
+      
+      // Reload tasks to reflect changes
+      await loadTasks();
+      
+      console.log('✅ Tasks reloaded, color should be visible now');
+    } catch (error) {
+      console.error('❌ Error updating task color:', error);
+      Alert.alert('Error', `Failed to update task color: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Helper function to determine if a color is dark
+  const isColorDark = (hexColor: string): boolean => {
+    // Remove # if present
+    const color = hexColor.replace('#', '');
+    const r = parseInt(color.substring(0, 2), 16);
+    const g = parseInt(color.substring(2, 4), 16);
+    const b = parseInt(color.substring(4, 6), 16);
+    // Calculate brightness using relative luminance formula
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    return brightness < 128;
   };
 
   const formatDateTime = (isoString: string) => {
@@ -583,7 +628,7 @@ export default function CalendarScreen() {
                       styles.taskIndicatorLine,
                       {
                         backgroundColor: isSelected && task.status === 'pending' ? '#fff' : 
-                                       getPriorityColor(task, colors.tint),
+                                       getTaskColor(task, colors.tint),
                         top: 4 + (index * 3),
                       }
                     ]} 
@@ -712,7 +757,7 @@ export default function CalendarScreen() {
                              {
                                top,
                                height: height - 1,
-                               backgroundColor: getPriorityColor(task, colors.tint),
+                               backgroundColor: getTaskColor(task, colors.tint),
                              }
                            ]}
                            onPress={() => handleTaskPress(task)}
@@ -1107,7 +1152,11 @@ export default function CalendarScreen() {
                    </TouchableOpacity>
                  </View>
 
-                 <View style={styles.simpleModalBody}>
+                 <ScrollView 
+                  style={styles.simpleModalBody}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled={true}
+                >
                    {/* Priority */}
                    <View style={styles.simpleModalRow}>
                      <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Priority:</Text>
@@ -1191,21 +1240,89 @@ export default function CalendarScreen() {
                      </View>
                    )}
 
-                   {/* Cancelled At (if applicable) */}
-                   {selectedTask.cancelled_at && (
-                     <View style={styles.simpleModalRow}>
-                       <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Cancelled:</Text>
-                       <Text style={[styles.simpleModalValue, { color: '#EF5350' }]}>
-                         {formatDateTime(selectedTask.cancelled_at)}
-                       </Text>
-                     </View>
-                   )}
-                 </View>
-               </View>
-             </View>
-           </View>
-         </Modal>
-       )}
+                  {/* Cancelled At (if applicable) */}
+                  {selectedTask.cancelled_at && (
+                    <View style={styles.simpleModalRow}>
+                      <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Cancelled:</Text>
+                      <Text style={[styles.simpleModalValue, { color: '#EF5350' }]}>
+                        {formatDateTime(selectedTask.cancelled_at)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Color Picker */}
+                  <View style={styles.colorPickerRow}>
+                    <Text style={[styles.simpleModalLabel, { color: colors.textSecondary, marginBottom: 8 }]}>Color:</Text>
+                    <View style={styles.colorPickerContainer}>
+                      {[
+                        '#FF5733', // Red
+                        '#FFA726', // Orange
+                        '#FFD700', // Gold
+                        '#4CAF50', // Green
+                        '#2196F3', // Blue
+                        '#9C27B0', // Purple
+                        '#E91E63', // Pink
+                        '#00BCD4', // Cyan
+                        '#FFBF00', // Yellow/Amber
+                        '#795548', // Brown
+                        '#607D8B', // Blue Grey
+                        '#000000', // Black
+                      ].map((color) => (
+                        <TouchableOpacity
+                          key={color}
+                          onPress={() => {
+                            console.log('🎨 Color button pressed:', color);
+                            handleUpdateTaskColor(color);
+                          }}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                          style={[
+                            styles.colorOption,
+                            {
+                              backgroundColor: color,
+                              borderColor: (selectedTask.color || DEFAULT_TASK_COLOR) === color
+                                ? colors.text
+                                : 'transparent',
+                              borderWidth: (selectedTask.color || DEFAULT_TASK_COLOR) === color ? 3 : 2,
+                            },
+                          ]}
+                        >
+                          {(selectedTask.color || DEFAULT_TASK_COLOR) === color && (
+                            <Ionicons 
+                              name="checkmark" 
+                              size={16} 
+                              color={isColorDark(color) ? "#fff" : "#000"} 
+                              style={styles.colorCheck} 
+                            />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                      {/* Reset to default */}
+                      <TouchableOpacity
+                        onPress={() => handleUpdateTaskColor(DEFAULT_TASK_COLOR)}
+                        style={[
+                          styles.colorOption,
+                          styles.resetColorOption,
+                          {
+                            borderColor: (!selectedTask.color || selectedTask.color === DEFAULT_TASK_COLOR)
+                              ? colors.text
+                              : 'transparent',
+                            borderWidth: (!selectedTask.color || selectedTask.color === DEFAULT_TASK_COLOR) ? 3 : 2,
+                          },
+                        ]}
+                      >
+                        {(!selectedTask.color || selectedTask.color === DEFAULT_TASK_COLOR) && (
+                          <Ionicons name="checkmark" size={16} color={colors.text} />
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* Chat Assistant Modal - Replaces Task Input Modal */}
       <Modal
@@ -2329,6 +2446,8 @@ const styles = StyleSheet.create({
   simpleModalContent: {
     width: '100%',
     maxWidth: 400,
+    zIndex: 1000,
+    elevation: 1000,
   },
   simpleModalCard: {
     borderRadius: 16,
@@ -2372,6 +2491,41 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
     marginLeft: 12,
+  },
+  colorPickerRow: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  colorPickerContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  colorOption: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 4,
+    marginBottom: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  resetColorOption: {
+    backgroundColor: 'transparent',
+    borderStyle: 'dashed',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  colorCheck: {
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   // Drawer styles
   drawerOverlay: {
