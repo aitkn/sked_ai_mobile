@@ -18,9 +18,11 @@ import { useFocusEffect } from 'expo-router'
 import { GlassMorphism } from '@/components/GlassMorphism'
 import { ThemedGradient } from '@/components/ThemedGradient'
 import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService'
+import { getColorForLabel, getLabelName, ColorLabelKey } from '@/constants/ColorLabels'
+import { ColorLabelPicker } from '@/components/ColorLabelPicker'
 
 // Helper function to convert InternalTask to Task format
-const convertInternalTaskToTask = (internalTask: InternalTask): Task => ({
+const convertInternalTaskToTask = (internalTask: InternalTask): Task & { colorLabel?: string } => ({
   id: internalTask.id,
   local_id: internalTask.id,
   user_id: 'internal_user',
@@ -33,6 +35,7 @@ const convertInternalTaskToTask = (internalTask: InternalTask): Task => ({
   sync_status: 'synced',
   created_at: internalTask.created_at,
   updated_at: internalTask.updated_at,
+  colorLabel: internalTask.colorLabel || 'none', // Default to 'none' if not set
 })
 
 const TASK_GRANULARITY = 600 // 10 minutes in seconds
@@ -44,14 +47,29 @@ export default function TaskViewScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [showStatusMenu, setShowStatusMenu] = useState(false)
+  const [showColorPicker, setShowColorPicker] = useState(false)
+  const [taskForColorEdit, setTaskForColorEdit] = useState<Task & { colorLabel?: string } | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date())
 
   // Load internal tasks
   const loadInternalTasks = async () => {
     try {
       const allInternalTasks = await internalDB.getAllTasks()
-      const convertedTasks = allInternalTasks.map(convertInternalTaskToTask)
-      setInternalTasks(convertedTasks)
+      // Update tasks that don't have colorLabel to default to 'none'
+      const tasksToUpdate = allInternalTasks.filter(task => !task.colorLabel)
+      if (tasksToUpdate.length > 0) {
+        console.log(`Updating ${tasksToUpdate.length} tasks to have colorLabel: 'none'`)
+        for (const task of tasksToUpdate) {
+          await internalDB.updateTask(task.id, { colorLabel: 'none' })
+        }
+        // Reload tasks after update
+        const updatedTasks = await internalDB.getAllTasks()
+        const convertedTasks = updatedTasks.map(convertInternalTaskToTask)
+        setInternalTasks(convertedTasks)
+      } else {
+        const convertedTasks = allInternalTasks.map(convertInternalTaskToTask)
+        setInternalTasks(convertedTasks)
+      }
     } catch (error) {
       console.error('Error loading internal tasks:', error)
       setInternalTasks([])
@@ -117,6 +135,7 @@ export default function TaskViewScreen() {
           name: timelineTask.name || timelineTask.title || 'Unnamed Task',
           status: 'pending' as const,
           priority: (timelineTask.priority || 'medium') as 'low' | 'medium' | 'high',
+          colorLabel: 'none' as const, // Test/synced tasks default to 'none'
           start_time: timelineTask.start_time,
           end_time: timelineTask.end_time,
           duration: timelineTask.duration || InternalDB.calculateDuration(timelineTask.start_time, timelineTask.end_time),
@@ -439,6 +458,25 @@ export default function TaskViewScreen() {
     }
   }
 
+  const handleColorLabelChange = async (labelKey: ColorLabelKey) => {
+    if (!taskForColorEdit) return
+    
+    try {
+      await internalDB.updateTask(taskForColorEdit.local_id, {
+        colorLabel: labelKey,
+      })
+
+      // Reload tasks to reflect changes
+      await loadInternalTasks()
+      
+      setShowColorPicker(false)
+      setTaskForColorEdit(null)
+    } catch (error) {
+      console.error('Error updating task color label:', error)
+      Alert.alert('Error', 'Failed to update color label')
+    }
+  }
+
   const formatTaskTimeShort = (dateString: string) => {
     const date = new Date(dateString)
     // For very short tasks (< 1 minute), show seconds too
@@ -463,7 +501,7 @@ export default function TaskViewScreen() {
     }
   }
 
-  const renderTaskItem = (task: Task) => (
+  const renderTaskItem = (task: Task & { colorLabel?: string }) => (
     <TouchableOpacity
       key={task.local_id}
       onPress={() => {
@@ -476,14 +514,24 @@ export default function TaskViewScreen() {
         intensity={actualTheme === 'dark' ? 'medium' : 'light'}
         style={{
           ...styles.taskItem,
-          borderLeftColor: getStatusColor(task.status as string),
+          borderLeftColor: task.colorLabel 
+            ? getColorForLabel(task.colorLabel)
+            : getStatusColor(task.status as string),
           backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)',
         }}
         borderRadius={12}
       >
         <View style={styles.taskContent}>
           <View style={styles.taskHeader}>
-            <Text style={[styles.taskName, { color: colors.text }]}>{task.name}</Text>
+            <View style={styles.taskNameContainer}>
+              {task.colorLabel && task.colorLabel !== 'none' && (
+                <View style={[
+                  styles.colorDot,
+                  { backgroundColor: getColorForLabel(task.colorLabel) }
+                ]} />
+              )}
+              <Text style={[styles.taskName, { color: colors.text }]}>{task.name}</Text>
+            </View>
             <FontAwesome 
               name={getStatusIcon(task.status as string) as any} 
               size={20} 
@@ -494,11 +542,35 @@ export default function TaskViewScreen() {
             <Text style={[styles.taskTime, { color: colors.textSecondary }]}>
               {task.start_time ? formatTaskTimeShort(task.start_time) : 'No time'} - {task.end_time ? formatTaskTimeShort(task.end_time) : 'No time'}
             </Text>
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(task.status as string) + '20' }]}>
-              <Text style={[styles.statusText, { color: getStatusColor(task.status as string) }]}>
-                {task.status}
-              </Text>
-            </View>
+            {task.colorLabel ? (
+              <TouchableOpacity
+                onPress={() => {
+                  setTaskForColorEdit(task)
+                  setShowColorPicker(true)
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.statusBadge, { backgroundColor: getColorForLabel(task.colorLabel) + '20' }]}>
+                  <Text style={[styles.statusText, { color: getColorForLabel(task.colorLabel) }]}>
+                    {getLabelName(task.colorLabel)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => {
+                  setTaskForColorEdit(task)
+                  setShowColorPicker(true)
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(task.status as string) + '20' }]}>
+                  <Text style={[styles.statusText, { color: getStatusColor(task.status as string) }]}>
+                    {task.status}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </GlassMorphism>
@@ -751,6 +823,17 @@ export default function TaskViewScreen() {
           </View>
         </View>
       )}
+
+      {/* Color Label Picker Modal */}
+      <ColorLabelPicker
+        visible={showColorPicker}
+        selectedLabel={taskForColorEdit?.colorLabel as ColorLabelKey}
+        onSelect={handleColorLabelChange}
+        onClose={() => {
+          setShowColorPicker(false)
+          setTaskForColorEdit(null)
+        }}
+      />
     </ThemedGradient>
   )
 }
@@ -819,6 +902,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  taskNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 8,
+  },
+  colorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   taskName: {
     fontSize: 16,

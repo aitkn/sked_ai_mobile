@@ -6,9 +6,12 @@ import {
   Alert,
   ScrollView,
   Platform,
+  Modal,
+  TextInput,
 } from 'react-native'
 import { Text } from '@/components/Themed'
 import { FontAwesome } from '@expo/vector-icons'
+import DateTimePicker from '@react-native-community/datetimepicker'
 import Colors from '@/constants/Colors'
 import { useTheme } from '@/contexts/ThemeContext'
 import { internalDB, InternalTask, InternalAction, InternalDB } from '@/lib/internal-db'
@@ -58,6 +61,21 @@ export default function DevScreen() {
   // Notification debug state
   const [scheduledNotifications, setScheduledNotifications] = useState<any[]>([])
   const [notificationPermission, setNotificationPermission] = useState<string>('unknown')
+  
+  // Time selection state
+  const [showTimeModal, setShowTimeModal] = useState(false)
+  const [startTime, setStartTime] = useState<Date>(() => {
+    const now = new Date()
+    now.setMinutes(now.getMinutes() + 1) // Default to 1 minute from now
+    return now
+  })
+  const [endTime, setEndTime] = useState<Date>(() => {
+    const now = new Date()
+    now.setMinutes(now.getMinutes() + 2) // Default to 2 minutes from now (1 minute duration)
+    return now
+  })
+  const [showStartPicker, setShowStartPicker] = useState(false)
+  const [showEndPicker, setShowEndPicker] = useState(false)
 
   // Load tasks and actions when component mounts
   useEffect(() => {
@@ -385,10 +403,10 @@ export default function DevScreen() {
     }
   }
 
-  const findOptimalTaskSlot = async (): Promise<{ startTime: Date; endTime: Date; description: string }> => {
+  const findOptimalTaskSlot = async (durationMinutes: number): Promise<{ startTime: Date; endTime: Date; description: string }> => {
     const allTasks = await internalDB.getAllTasks()
     const now = new Date()
-    const taskDuration = 30 * 1000 // 30 seconds in milliseconds
+    const taskDuration = durationMinutes * 60 * 1000 // Convert minutes to milliseconds
     
     // Filter to active tasks (not completed) and sort by start time
     const activeTasks = allTasks
@@ -468,11 +486,33 @@ export default function DevScreen() {
     return { startTime: proposedStartTime, endTime, description }
   }
 
-  const handleAddQuickTask = async () => {
+  const handleAddQuickTask = () => {
+    // Initialize times to sensible defaults
+    const now = new Date()
+    const defaultStart = new Date(now.getTime() + 60 * 1000) // 1 minute from now
+    const defaultEnd = new Date(now.getTime() + 2 * 60 * 1000) // 2 minutes from now
+    
+    setStartTime(defaultStart)
+    setEndTime(defaultEnd)
+    setShowTimeModal(true)
+  }
+
+  const handleCreateTaskWithTimes = async () => {
     try {
-      setLoading(true)
+      // Validate times
+      if (endTime <= startTime) {
+        Alert.alert('Invalid Times', 'End time must be after start time')
+        return
+      }
       
-      const { startTime, endTime, description } = await findOptimalTaskSlot()
+      const now = new Date()
+      if (startTime < now) {
+        Alert.alert('Invalid Start Time', 'Start time cannot be in the past')
+        return
+      }
+      
+      setShowTimeModal(false)
+      setLoading(true)
       
       const newTask = await internalDB.addTaskWithDuration(
         `Quick Test ${new Date().toLocaleTimeString()}`,
@@ -483,11 +523,14 @@ export default function DevScreen() {
       await loadTasks()
       await loadActions()
       
-      const timeUntilStart = Math.round((startTime.getTime() - new Date().getTime()) / 1000)
+      const timeUntilStart = Math.round((startTime.getTime() - now.getTime()) / 1000)
+      const durationSeconds = Math.round((endTime.getTime() - startTime.getTime()) / 1000)
+      const durationMinutes = Math.round(durationSeconds / 60)
+      const durationText = durationMinutes === 1 ? '1 minute' : `${durationMinutes} minutes`
       
       Alert.alert(
         'Task Created!',
-        `"${newTask.name}" will start in ${timeUntilStart} seconds and run for 30 seconds.\n\n${description}`,
+        `"${newTask.name}" will start in ${timeUntilStart} seconds and run for ${durationText}.\n\nStart: ${startTime.toLocaleString()}\nEnd: ${endTime.toLocaleString()}`,
         [{ text: 'OK' }]
       )
     } catch (error: any) {
@@ -495,6 +538,31 @@ export default function DevScreen() {
       Alert.alert('Error', `Failed to create task: ${error.message}`)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleStartTimeChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowStartPicker(false)
+    }
+    
+    if (selectedDate) {
+      setStartTime(selectedDate)
+      // Auto-adjust end time if it's before the new start time
+      if (endTime <= selectedDate) {
+        const newEndTime = new Date(selectedDate.getTime() + 60 * 60 * 1000) // 1 hour later
+        setEndTime(newEndTime)
+      }
+    }
+  }
+
+  const handleEndTimeChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowEndPicker(false)
+    }
+    
+    if (selectedDate) {
+      setEndTime(selectedDate)
     }
   }
 
@@ -1698,6 +1766,144 @@ export default function DevScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Time Selection Modal */}
+      <Modal
+        visible={showTimeModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowTimeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: actualTheme === 'dark' ? '#2a2a2a' : '#fff' }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Set Task Times</Text>
+            <Text style={[styles.modalDescription, { color: colors.textSecondary }]}>
+              Choose the start and end times for the test task
+            </Text>
+            
+            {/* Start Time */}
+            <View style={styles.timePickerSection}>
+              <Text style={[styles.timeLabel, { color: colors.text }]}>Start Time</Text>
+              <TouchableOpacity
+                style={[styles.timeButton, { 
+                  backgroundColor: actualTheme === 'dark' ? '#1a1a1a' : '#f5f5f5',
+                  borderColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.2)' : '#ddd'
+                }]}
+                onPress={() => {
+                  if (Platform.OS === 'android') {
+                    setShowStartPicker(true)
+                  } else {
+                    setShowStartPicker(!showStartPicker)
+                    setShowEndPicker(false)
+                  }
+                }}
+              >
+                <Text style={[styles.timeButtonText, { color: colors.text }]}>
+                  {startTime.toLocaleString()}
+                </Text>
+                <FontAwesome name="calendar" size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+              
+              {showStartPicker && (
+                <View style={styles.pickerContainer}>
+                  <DateTimePicker
+                    value={startTime}
+                    mode="datetime"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleStartTimeChange}
+                    minimumDate={new Date()}
+                    textColor={colors.text}
+                  />
+                  {Platform.OS === 'ios' && (
+                    <TouchableOpacity
+                      style={[styles.pickerDoneButton, { backgroundColor: Colors.light.tint }]}
+                      onPress={() => setShowStartPicker(false)}
+                    >
+                      <Text style={styles.pickerDoneButtonText}>Done</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </View>
+            
+            {/* End Time */}
+            <View style={styles.timePickerSection}>
+              <Text style={[styles.timeLabel, { color: colors.text }]}>End Time</Text>
+              <TouchableOpacity
+                style={[styles.timeButton, { 
+                  backgroundColor: actualTheme === 'dark' ? '#1a1a1a' : '#f5f5f5',
+                  borderColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.2)' : '#ddd'
+                }]}
+                onPress={() => {
+                  if (Platform.OS === 'android') {
+                    setShowEndPicker(true)
+                  } else {
+                    setShowEndPicker(!showEndPicker)
+                    setShowStartPicker(false)
+                  }
+                }}
+              >
+                <Text style={[styles.timeButtonText, { color: colors.text }]}>
+                  {endTime.toLocaleString()}
+                </Text>
+                <FontAwesome name="calendar" size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+              
+              {showEndPicker && (
+                <View style={styles.pickerContainer}>
+                  <DateTimePicker
+                    value={endTime}
+                    mode="datetime"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleEndTimeChange}
+                    minimumDate={startTime}
+                    textColor={colors.text}
+                  />
+                  {Platform.OS === 'ios' && (
+                    <TouchableOpacity
+                      style={[styles.pickerDoneButton, { backgroundColor: Colors.light.tint }]}
+                      onPress={() => setShowEndPicker(false)}
+                    >
+                      <Text style={styles.pickerDoneButtonText}>Done</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </View>
+            
+            {/* Duration Display */}
+            <View style={styles.durationDisplay}>
+              <Text style={[styles.durationLabel, { color: colors.textSecondary }]}>Duration:</Text>
+              <Text style={[styles.durationValue, { color: colors.text }]}>
+                {Math.round((endTime.getTime() - startTime.getTime()) / 1000 / 60)} minutes
+              </Text>
+            </View>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { borderColor: colors.textSecondary }]}
+                onPress={() => {
+                  setShowTimeModal(false)
+                  setShowStartPicker(false)
+                  setShowEndPicker(false)
+                }}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonConfirm, { backgroundColor: Colors.light.tint }]}
+                onPress={handleCreateTaskWithTimes}
+                disabled={loading}
+              >
+                <Text style={[styles.modalButtonText, { color: '#fff' }]}>
+                  {loading ? 'Creating...' : 'Create Task'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -1981,5 +2187,113 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     fontStyle: 'italic',
+  },
+  // Time selection modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  modalDescription: {
+    fontSize: 14,
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  timePickerSection: {
+    marginBottom: 20,
+  },
+  timeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  timeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 48,
+  },
+  timeButtonText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  pickerContainer: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  pickerDoneButton: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  pickerDoneButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  durationDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(74, 144, 226, 0.1)',
+    marginBottom: 20,
+  },
+  durationLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  durationValue: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonCancel: {
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  modalButtonConfirm: {
+    // backgroundColor set inline
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 })

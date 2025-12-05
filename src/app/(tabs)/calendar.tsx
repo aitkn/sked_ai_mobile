@@ -13,6 +13,9 @@ import { ThemedGradient } from '@/components/ThemedGradient';
 import { internalDB, InternalTask, InternalDB } from '@/lib/internal-db';
 import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService';
 import { ChatAssistant } from '@/components/ChatAssistant';
+import { ColorLegendBar } from '@/components/ColorLegendBar';
+import { ColorLabelPicker } from '@/components/ColorLabelPicker';
+import { getColorForLabel, getLabelName, ColorLabelKey } from '@/constants/ColorLabels';
 
 export default function CalendarScreen() {
   const { actualTheme, colors } = useTheme();
@@ -26,7 +29,7 @@ export default function CalendarScreen() {
   const [showProcessingIndicator, setShowProcessingIndicator] = useState(false);
   const [tasks, setTasks] = useState<InternalTask[]>([]);
   const [selectedTask, setSelectedTask] = useState<InternalTask | null>(null);
-  const [viewMode, setViewMode] = useState<'month' | 'week' | '3day' | 'day'>('month');
+  const [viewMode, setViewMode] = useState<'month' | 'week' | '3day' | 'day'>('week');
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -43,6 +46,7 @@ export default function CalendarScreen() {
   const [editingTime, setEditingTime] = useState<'start' | 'end' | null>(null);
   const [editedStartTime, setEditedStartTime] = useState<Date | null>(null);
   const [editedEndTime, setEditedEndTime] = useState<Date | null>(null);
+  const [showColorPicker, setShowColorPicker] = useState(false);
   const syncIntervalRef = useRef<NodeJS.Timeout | number | null>(null);
   const monthPickerScrollRef = useRef<ScrollView>(null);
   const timeGridScrollRef = useRef<ScrollView>(null);
@@ -181,8 +185,14 @@ export default function CalendarScreen() {
     return filteredTasks;
   };
 
-  // Helper function to get priority-based color for pending tasks
-  const getPriorityColor = (task: InternalTask, themeColor: string): string => {
+  // Helper function to get color for task (prioritizes colorLabel over status/priority)
+  const getTaskColor = (task: InternalTask, themeColor: string): string => {
+    // If task has a color label, use it (unless it's 'none')
+    if (task.colorLabel && task.colorLabel !== 'none') {
+      return getColorForLabel(task.colorLabel);
+    }
+    
+    // Fallback to status-based colors
     if (task.status === 'completed') return '#4CAF50';
     if (task.status === 'in_progress') return '#FFA726';
     
@@ -200,6 +210,11 @@ export default function CalendarScreen() {
     
     // Fallback for any other theme colors
     return themeColor;
+  };
+
+  // Keep getPriorityColor for backward compatibility (now uses getTaskColor)
+  const getPriorityColor = (task: InternalTask, themeColor: string): string => {
+    return getTaskColor(task, themeColor);
   };
 
   const getDaysInMonth = (date: Date) => {
@@ -410,6 +425,28 @@ export default function CalendarScreen() {
     } catch (error) {
       console.error('Error updating task time:', error);
       Alert.alert('Error', 'Failed to update task time');
+    }
+  };
+
+  const handleColorLabelChange = async (labelKey: ColorLabelKey) => {
+    if (!selectedTask) return;
+    
+    try {
+      await internalDB.updateTask(selectedTask.id, {
+        colorLabel: labelKey,
+      });
+
+      // Reload tasks to reflect changes
+      await loadTasks();
+      
+      // Update selected task to show new color
+      const updatedTask = await internalDB.getTaskById(selectedTask.id);
+      if (updatedTask) {
+        setSelectedTask(updatedTask);
+      }
+    } catch (error) {
+      console.error('Error updating task color label:', error);
+      Alert.alert('Error', 'Failed to update color label');
     }
   };
 
@@ -659,19 +696,19 @@ export default function CalendarScreen() {
             ]}>{day}</Text>
             {hasTasks && (
               <View style={styles.taskIndicators}>
-                {dayTasks.slice(0, 3).map((task, index) => (
-                  <View 
-                    key={task.id} 
-                    style={[
-                      styles.taskIndicatorLine,
-                      {
-                        backgroundColor: isSelected && task.status === 'pending' ? '#fff' : 
-                                       getPriorityColor(task, colors.tint),
-                        top: 4 + (index * 3),
-                      }
-                    ]} 
-                  />
-                ))}
+                    {dayTasks.slice(0, 3).map((task, index) => (
+                      <View 
+                        key={task.id} 
+                        style={[
+                          styles.taskIndicatorLine,
+                          {
+                            backgroundColor: isSelected && task.status === 'pending' ? '#fff' : 
+                                           getTaskColor(task, colors.tint),
+                            top: 4 + (index * 3),
+                          }
+                        ]} 
+                      />
+                    ))}
                 {dayTasks.length > 3 && (
                   <Text style={[styles.moreTasksIndicator, { color: isSelected ? '#fff' : colors.text }]}>
                     +{dayTasks.length - 3}
@@ -795,7 +832,7 @@ export default function CalendarScreen() {
                              {
                                top,
                                height: height - 1,
-                               backgroundColor: getPriorityColor(task, colors.tint),
+                               backgroundColor: getTaskColor(task, colors.tint),
                              }
                            ]}
                            onPress={() => handleTaskPress(task)}
@@ -1183,7 +1220,7 @@ export default function CalendarScreen() {
          >
            <View style={styles.simpleModalOverlay}>
              <Pressable style={StyleSheet.absoluteFillObject} onPress={closeTaskDetails} />
-             <View style={styles.simpleModalContent}>
+             <Pressable style={styles.simpleModalContent} onPress={(e) => e.stopPropagation()}>
                <View style={[
                  styles.simpleModalCard,
                  { backgroundColor: actualTheme === 'dark' ? 'rgba(30,30,40,0.95)' : 'rgba(255,255,255,0.95)' }
@@ -1228,6 +1265,25 @@ export default function CalendarScreen() {
                        {formatDuration(selectedTask.duration)}
                      </Text>
                    </View>
+
+                   {/* Color Label */}
+                   <TouchableOpacity
+                     onPress={() => {
+                       console.log('Color label button pressed, opening picker...');
+                       setShowColorPicker(true);
+                     }}
+                     activeOpacity={0.7}
+                     style={styles.simpleModalRow}
+                   >
+                     <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Color Label:</Text>
+                     <View style={[styles.colorLabelButton, { backgroundColor: getColorForLabel(selectedTask.colorLabel) + '20' }]}>
+                       <View style={[styles.colorLabelSwatch, { backgroundColor: getColorForLabel(selectedTask.colorLabel) }]} />
+                       <Text style={[styles.simpleModalValue, { color: colors.text, marginLeft: 8 }]}>
+                         {getLabelName(selectedTask.colorLabel)}
+                       </Text>
+                       <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} style={{ marginLeft: 8 }} />
+                     </View>
+                   </TouchableOpacity>
 
                    {/* Start Time */}
                    <View style={styles.simpleModalRow}>
@@ -1378,7 +1434,14 @@ export default function CalendarScreen() {
                    )}
                  </View>
                </View>
-             </View>
+             </Pressable>
+             {/* Color Label Picker - Rendered inside modal to ensure proper layering */}
+             <ColorLabelPicker
+               visible={showColorPicker}
+               selectedLabel={selectedTask?.colorLabel}
+               onSelect={handleColorLabelChange}
+               onClose={() => setShowColorPicker(false)}
+             />
            </View>
          </Modal>
        )}
@@ -2618,6 +2681,22 @@ const styles = StyleSheet.create({
   pickerButtonText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  colorLabelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flex: 1,
+    marginLeft: 12,
+  },
+  colorLabelSwatch: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   // Drawer styles
   drawerOverlay: {
