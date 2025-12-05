@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 export interface InternalTask {
   id: string
   name: string
+  description?: string // optional task description
   start_time: string // ISO string
   end_time: string   // ISO string
   duration: number   // duration in seconds

@@ -1,6 +1,7 @@
-import { StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { internalDB, InternalTask } from '@/lib/internal-db';
 import { GlassMorphism } from '@/components/GlassMorphism';
@@ -8,6 +9,7 @@ import { ThemedGradient } from '@/components/ThemedGradient';
 
 export default function ScheduledTasksScreen() {
   const { actualTheme, colors } = useTheme();
+  const router = useRouter();
   const [tasks, setTasks] = useState<InternalTask[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -131,20 +133,24 @@ export default function ScheduledTasksScreen() {
               </View>
             ) : (
               tasks.map((task) => (
-                <GlassMorphism
+                <TouchableOpacity
                   key={task.id}
-                  intensity={actualTheme === 'dark' ? 'medium' : 'light'}
-                  style={[
-                    styles.taskItem,
-                    {
-                      backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)',
-                      borderLeftColor: task.status === 'completed' ? '#4CAF50' :
-                                      task.status === 'in_progress' ? '#FFA726' :
-                                      colors.tint,
-                    }
-                  ]}
-                  borderRadius={12}
+                  onPress={() => router.push(`/edit-task?taskId=${task.id}`)}
+                  activeOpacity={0.7}
                 >
+                  <GlassMorphism
+                    intensity={actualTheme === 'dark' ? 'medium' : 'light'}
+                    style={[
+                      styles.taskItem,
+                      {
+                        backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)',
+                        borderLeftColor: task.status === 'completed' ? '#4CAF50' :
+                                        task.status === 'in_progress' ? '#FFA726' :
+                                        colors.tint,
+                      }
+                    ]}
+                    borderRadius={12}
+                  >
                   <View style={styles.taskHeader}>
                     <View style={styles.taskTitleContainer}>
                       <Text style={[styles.statusIcon, {
@@ -196,7 +202,8 @@ export default function ScheduledTasksScreen() {
                       {task.description}
                     </Text>
                   )}
-                </GlassMorphism>
+                  </GlassMorphism>
+                </TouchableOpacity>
               ))
             )}
           </View>
