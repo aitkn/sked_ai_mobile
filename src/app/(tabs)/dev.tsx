@@ -344,8 +344,48 @@ export default function DevScreen() {
         return
       }
 
+      // For notifications (5 minutes before)
+      if (delaySeconds === 300) {
+        const now = Date.now()
+        const eventTime = new Date(now + (600 * 1000))
+        const eventTimeStr = eventTime.toLocaleTimeString()
+        const scheduledAt = new Date(now)
+        const scheduledAtStr = scheduledAt.toLocaleTimeString()
+        const triggerDate = new Date(now + (600 - delaySeconds) * 1000)
+        const willFireAtStr = triggerDate.toLocaleTimeString()
+        const delayMs = delaySeconds * 1000
+        
+        console.log(`⏰ Scheduling notification:`)
+        console.log(`   - Current time: ${scheduledAtStr} (${now}ms)`)
+        console.log(`   - Event time: ${eventTimeStr} (${eventTime.getTime()}ms)`)
+        console.log(`   - Trigger time: ${willFireAtStr} (${triggerDate.getTime()}ms)`)
+        console.log(`   - Delay: ${delaySeconds} seconds (${delayMs}ms)`)
+        
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `Test Notification (${delaySeconds}s delay)`,
+            body: `Scheduled at ${scheduledAtStr}, will appear at ${willFireAtStr}`,
+            data: { type: 'test', delay: delaySeconds },
+            sound: true,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: delaySeconds,
+            repeats: false,
+          },
+        })
+        console.log(`✅ Notification scheduled successfully`)
+        console.log(`   - It will appear in ${delaySeconds} seconds`)
+        
+        // Show a confirmation that it was scheduled (not that it appeared)
+        Alert.alert(
+          'Notification Scheduled',
+          `A notification will appear in ${delaySeconds} seconds.\n\nScheduled at: ${scheduledAtStr}\nEvent at: ${eventTimeStr}\nWill appear at: ${willFireAtStr}`,
+          [{ text: 'OK' }]
+        )      }
+
       // For immediate notifications (0s delay), use displayNotificationAsync instead
-      if (delaySeconds === 0) {
+      else if (delaySeconds === 0) {
         await Notifications.scheduleNotificationAsync({
           content: {
             title: `Test Notification (Immediate)`,
@@ -1687,6 +1727,13 @@ export default function DevScreen() {
               onPress={() => scheduleTestNotification(60)}
             >
               <Text style={styles.buttonText}>Test 1m</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.button, styles.smallButton]}
+              onPress={() => scheduleTestNotification(300)}
+            >
+              <Text style={styles.buttonText}>Test 5m Before</Text>
             </TouchableOpacity>
           </View>
 
