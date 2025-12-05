@@ -61,6 +61,7 @@ const convertInternalTaskToTask = (internalTask: InternalTask): Task => ({
   end_time: internalTask.end_time,
   completed_at: internalTask.completed_at,
   priority: internalTask.priority,
+  color: internalTask.color,
   sync_status: 'synced',
   created_at: internalTask.created_at,
   updated_at: internalTask.updated_at,

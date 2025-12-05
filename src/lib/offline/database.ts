@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
+// Default task color
+export const DEFAULT_TASK_COLOR = '#add8e6' // Blue color
+
 export interface Task {
   id: string
   task_id?: string // Supabase ID
@@ -14,6 +17,7 @@ export interface Task {
   reminder_at?: string
   completed_at?: string
   priority: 'low' | 'medium' | 'high'
+  color?: string // Color code (hex, rgb, or named color) for task visualization
   sync_status: 'synced' | 'pending' | 'conflict'
   created_at: string
   updated_at: string

@@ -1,5 +1,5 @@
 import { supabase } from '../supabase'
-import { OfflineDatabase, Task } from './database'
+import { OfflineDatabase, Task, DEFAULT_TASK_COLOR } from './database'
 import NetInfo from '@react-native-community/netinfo'
 // Background fetch requires native setup, commenting out for now
 // import BackgroundFetch from 'react-native-background-fetch'
@@ -267,6 +267,8 @@ export class SyncService {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       ...task,
+      // Ensure color defaults to blue if not provided
+      color: task.color || DEFAULT_TASK_COLOR,
     }
 
     await this.db.upsertTask(newTask)

@@ -9,6 +9,7 @@ export interface InternalTask {
   duration: number   // duration in seconds
   status: 'pending' | 'in_progress' | 'completed' | 'paused' | 'cancelled' // task status
   priority: 'low' | 'medium' | 'high' // task importance
+  color?: string // Custom color for task visualization (optional)
   completed_at?: string // ISO string, optional
   paused_at?: string // ISO string, optional
   cancelled_at?: string // ISO string, optional
@@ -282,6 +283,7 @@ export class InternalDB {
         duration: taskData.duration || InternalDB.calculateDuration(taskData.start_time, taskData.end_time),
         status: taskData.status || 'pending',
         priority: taskData.priority || 'medium',
+        color: taskData.color,
         completed_at: taskData.completed_at,
         created_at: taskData.created_at || now,
         updated_at: now,
