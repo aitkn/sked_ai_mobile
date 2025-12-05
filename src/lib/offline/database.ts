@@ -7,7 +7,7 @@ export interface Task {
   user_id: string
   name: string
   task_json?: any
-  status: 'pending' | 'completed' | 'in_progress' | 'created'
+  status: 'pending' | 'completed' | 'in_progress' | 'created' | 'failed'
   start_time?: string // ISO string for task start time
   end_time?: string // ISO string for task end time
   due_at?: string

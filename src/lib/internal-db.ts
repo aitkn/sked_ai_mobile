@@ -7,11 +7,12 @@ export interface InternalTask {
   start_time: string // ISO string
   end_time: string   // ISO string
   duration: number   // duration in seconds
-  status: 'pending' | 'in_progress' | 'completed' | 'paused' | 'cancelled' // task status
+  status: 'pending' | 'in_progress' | 'completed' | 'paused' | 'cancelled' | 'failed' // task status
   priority: 'low' | 'medium' | 'high' // task importance
   completed_at?: string // ISO string, optional
   paused_at?: string // ISO string, optional
   cancelled_at?: string // ISO string, optional
+  failed_at?: string // ISO string, optional
   created_at: string // ISO string
   updated_at: string // ISO string
 }

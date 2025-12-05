@@ -388,7 +388,7 @@ export default function DevScreen() {
   const findOptimalTaskSlot = async (): Promise<{ startTime: Date; endTime: Date; description: string }> => {
     const allTasks = await internalDB.getAllTasks()
     const now = new Date()
-    const taskDuration = 15 * 1000 // 15 seconds in milliseconds
+    const taskDuration = 30 * 1000 // 30 seconds in milliseconds
     
     // Filter to active tasks (not completed) and sort by start time
     const activeTasks = allTasks
@@ -407,14 +407,14 @@ export default function DevScreen() {
     let description: string
     
     if (!currentTask) {
-      // No current task - schedule 10 seconds from now
-      proposedStartTime = new Date(now.getTime() + 10 * 1000)
-      description = "No current task - scheduled 10 seconds from now"
+      // No current task - schedule 1 minute from now
+      proposedStartTime = new Date(now.getTime() + 60 * 1000)
+      description = "No current task - scheduled 1 minute from now"
     } else {
-      // There's a current task - schedule 10 seconds after it ends
+      // There's a current task - schedule 1 minute after it ends
       const currentTaskEnd = new Date(currentTask.end_time).getTime()
-      proposedStartTime = new Date(currentTaskEnd + 10 * 1000)
-      description = `Scheduled 10 seconds after "${currentTask.name}" ends`
+      proposedStartTime = new Date(currentTaskEnd + 60 * 1000)
+      description = `Scheduled 1 minute after "${currentTask.name}" ends`
     }
     
     // Check for conflicts and find next available slot
@@ -447,11 +447,11 @@ export default function DevScreen() {
         
         if (conflictingTask) {
           const conflictTaskEnd = new Date(conflictingTask.end_time).getTime()
-          proposedStartTime = new Date(conflictTaskEnd + 10 * 1000)
-          description = `Rescheduled to 10 seconds after "${conflictingTask.name}" (conflict avoided)`
+          proposedStartTime = new Date(conflictTaskEnd + 60 * 1000)
+          description = `Rescheduled to 1 minute after "${conflictingTask.name}" (conflict avoided)`
         } else {
-          // Fallback: move forward by 30 seconds
-          proposedStartTime = new Date(proposedStartTime.getTime() + 30 * 1000)
+          // Fallback: move forward by 1 minute
+          proposedStartTime = new Date(proposedStartTime.getTime() + 60 * 1000)
           description = "Rescheduled to avoid conflicts"
         }
         attempts++
@@ -487,7 +487,7 @@ export default function DevScreen() {
       
       Alert.alert(
         'Task Created!',
-        `"${newTask.name}" will start in ${timeUntilStart} seconds and run for 15 seconds.\n\n${description}`,
+        `"${newTask.name}" will start in ${timeUntilStart} seconds and run for 30 seconds.\n\n${description}`,
         [{ text: 'OK' }]
       )
     } catch (error: any) {

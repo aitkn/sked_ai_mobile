@@ -2,6 +2,7 @@ import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingVi
 import { Text } from '@/components/Themed';
 import { useState, useEffect, useRef } from 'react';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import ThemedIcon from '@/components/ThemedIcon';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
@@ -39,6 +40,9 @@ export default function CalendarScreen() {
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [editingTime, setEditingTime] = useState<'start' | 'end' | null>(null);
+  const [editedStartTime, setEditedStartTime] = useState<Date | null>(null);
+  const [editedEndTime, setEditedEndTime] = useState<Date | null>(null);
   const syncIntervalRef = useRef<NodeJS.Timeout | number | null>(null);
   const monthPickerScrollRef = useRef<ScrollView>(null);
   const timeGridScrollRef = useRef<ScrollView>(null);
@@ -324,10 +328,89 @@ export default function CalendarScreen() {
 
   const handleTaskPress = (task: InternalTask) => {
     setSelectedTask(task);
+    setEditedStartTime(new Date(task.start_time));
+    setEditedEndTime(new Date(task.end_time));
+    setEditingTime(null);
   };
 
   const closeTaskDetails = () => {
     setSelectedTask(null);
+    setEditingTime(null);
+    setEditedStartTime(null);
+    setEditedEndTime(null);
+  };
+
+  const handleTimeChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setEditingTime(null);
+    }
+    
+    if (selectedDate && editingTime) {
+      if (editingTime === 'start') {
+        setEditedStartTime(selectedDate);
+        // If new start time is after end time, adjust end time
+        if (editedEndTime && selectedDate >= editedEndTime) {
+          const newEndTime = new Date(selectedDate);
+          newEndTime.setHours(selectedDate.getHours() + 1); // Default 1 hour duration
+          setEditedEndTime(newEndTime);
+        }
+      } else if (editingTime === 'end') {
+        setEditedEndTime(selectedDate);
+        // If new end time is before start time, adjust start time
+        if (editedStartTime && selectedDate <= editedStartTime) {
+          const newStartTime = new Date(selectedDate);
+          newStartTime.setHours(selectedDate.getHours() - 1); // Default 1 hour before
+          setEditedStartTime(newStartTime);
+        }
+      }
+      
+      if (Platform.OS === 'ios') {
+        // On iOS, keep picker open for further adjustments
+      } else {
+        setEditingTime(null);
+      }
+    }
+  };
+
+  const handleSaveTimeChanges = async () => {
+    if (!selectedTask || !editedStartTime || !editedEndTime) return;
+    
+    try {
+      const newDuration = Math.floor((editedEndTime.getTime() - editedStartTime.getTime()) / 1000);
+      
+      if (newDuration <= 0) {
+        Alert.alert('Invalid Time', 'End time must be after start time');
+        return;
+      }
+
+      await internalDB.updateTask(selectedTask.id, {
+        start_time: editedStartTime.toISOString(),
+        end_time: editedEndTime.toISOString(),
+        duration: newDuration,
+      });
+
+      await internalDB.addAction({
+        action_type: 'task_skipped',
+        task_id: selectedTask.id,
+        task_name: selectedTask.name,
+        details: `Time updated: ${editedStartTime.toLocaleString()} - ${editedEndTime.toLocaleString()}`
+      });
+
+      // Reload tasks to reflect changes
+      await loadTasks();
+      
+      // Update selected task to show new times
+      const updatedTask = await internalDB.getTaskById(selectedTask.id);
+      if (updatedTask) {
+        setSelectedTask(updatedTask);
+      }
+      
+      setEditingTime(null);
+      Alert.alert('Success', 'Task time updated successfully');
+    } catch (error) {
+      console.error('Error updating task time:', error);
+      Alert.alert('Error', 'Failed to update task time');
+    }
   };
 
   const formatDateTime = (isoString: string) => {
@@ -835,7 +918,14 @@ export default function CalendarScreen() {
               </TouchableOpacity>
               
               <TouchableOpacity 
-                onPress={() => navigateMonth('next')}
+                onPress={() => {
+                  switch (viewMode) {
+                    case 'month': navigateMonth('next'); break;
+                    case 'week': navigateWeek('next'); break;
+                    case '3day': navigate3Day('next'); break;
+                    case 'day': navigateDay('next'); break;
+                  }
+                }} 
                 style={styles.arrowButton}
               >
                 <Ionicons 
@@ -1142,18 +1232,104 @@ export default function CalendarScreen() {
                    {/* Start Time */}
                    <View style={styles.simpleModalRow}>
                      <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Start Time:</Text>
-                     <Text style={[styles.simpleModalValue, { color: colors.text }]}>
-                       {formatDateTime(selectedTask.start_time)}
-                     </Text>
+                     <View style={styles.timeEditContainer}>
+                       <Text style={[styles.simpleModalValue, { color: colors.text, flex: 1 }]}>
+                         {editedStartTime ? formatDateTime(editedStartTime.toISOString()) : formatDateTime(selectedTask.start_time)}
+                       </Text>
+                       <TouchableOpacity
+                         onPress={() => setEditingTime('start')}
+                         style={[styles.editButton, { backgroundColor: colors.tint + '20' }]}
+                       >
+                         <Ionicons name="create-outline" size={18} color={colors.tint} />
+                       </TouchableOpacity>
+                     </View>
                    </View>
 
                    {/* End Time */}
                    <View style={styles.simpleModalRow}>
                      <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>End Time:</Text>
-                     <Text style={[styles.simpleModalValue, { color: colors.text }]}>
-                       {formatDateTime(selectedTask.end_time)}
-                     </Text>
+                     <View style={styles.timeEditContainer}>
+                       <Text style={[styles.simpleModalValue, { color: colors.text, flex: 1 }]}>
+                         {editedEndTime ? formatDateTime(editedEndTime.toISOString()) : formatDateTime(selectedTask.end_time)}
+                       </Text>
+                       <TouchableOpacity
+                         onPress={() => setEditingTime('end')}
+                         style={[styles.editButton, { backgroundColor: colors.tint + '20' }]}
+                       >
+                         <Ionicons name="create-outline" size={18} color={colors.tint} />
+                       </TouchableOpacity>
+                     </View>
                    </View>
+
+                   {/* Save/Cancel buttons when editing */}
+                   {(editingTime || (editedStartTime && editedEndTime && 
+                     (editedStartTime.toISOString() !== selectedTask.start_time || 
+                      editedEndTime.toISOString() !== selectedTask.end_time))) && (
+                     <View style={styles.timeEditActions}>
+                       <TouchableOpacity
+                         onPress={() => {
+                           setEditingTime(null);
+                           setEditedStartTime(new Date(selectedTask.start_time));
+                           setEditedEndTime(new Date(selectedTask.end_time));
+                         }}
+                         style={[styles.cancelTimeButton, { backgroundColor: actualTheme === 'dark' ? '#2a2a2a' : '#f0f0f0' }]}
+                       >
+                         <Text style={[styles.cancelTimeButtonText, { color: colors.text }]}>Cancel</Text>
+                       </TouchableOpacity>
+                       <TouchableOpacity
+                         onPress={handleSaveTimeChanges}
+                         style={[styles.saveTimeButton, { backgroundColor: colors.tint }]}
+                       >
+                         <Text style={styles.saveTimeButtonText}>Save Changes</Text>
+                       </TouchableOpacity>
+                     </View>
+                   )}
+
+                   {/* DateTime Picker */}
+                   {editingTime && (editedStartTime || editedEndTime) && (
+                     <View style={styles.dateTimePickerContainer}>
+                       {Platform.OS === 'ios' ? (
+                         <View style={[styles.dateTimePickerWrapper, { backgroundColor: actualTheme === 'dark' ? '#2a2a2a' : '#f8f9fa' }]}>
+                           <DateTimePicker
+                             value={editingTime === 'start' ? (editedStartTime || new Date()) : (editedEndTime || new Date())}
+                             mode="datetime"
+                             display="spinner"
+                             onChange={handleTimeChange}
+                             textColor={colors.text}
+                           />
+                           <View style={styles.pickerActions}>
+                             <TouchableOpacity
+                               onPress={() => setEditingTime(null)}
+                               style={styles.pickerCancelButton}
+                             >
+                               <Text style={[styles.pickerButtonText, { color: colors.textSecondary }]}>Cancel</Text>
+                             </TouchableOpacity>
+                             <TouchableOpacity
+                               onPress={() => {
+                                 if (editingTime === 'start' && editedStartTime) {
+                                   setEditingTime(null);
+                                 } else if (editingTime === 'end' && editedEndTime) {
+                                   setEditingTime(null);
+                                 }
+                               }}
+                               style={[styles.pickerDoneButton, { backgroundColor: colors.tint }]}
+                             >
+                               <Text style={[styles.pickerButtonText, { color: '#fff' }]}>Done</Text>
+                             </TouchableOpacity>
+                           </View>
+                         </View>
+                       ) : (
+                         editingTime && (
+                           <DateTimePicker
+                             value={editingTime === 'start' ? (editedStartTime || new Date()) : (editedEndTime || new Date())}
+                             mode="datetime"
+                             display="default"
+                             onChange={handleTimeChange}
+                           />
+                         )
+                       )}
+                     </View>
+                   )}
 
                    {/* Created At */}
                    <View style={styles.simpleModalRow}>
@@ -2372,6 +2548,76 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
     marginLeft: 12,
+  },
+  timeEditContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 8,
+  },
+  editButton: {
+    padding: 6,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeEditActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  cancelTimeButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelTimeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  saveTimeButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  saveTimeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  dateTimePickerContainer: {
+    marginTop: 12,
+  },
+  dateTimePickerWrapper: {
+    borderRadius: 12,
+    padding: 12,
+  },
+  pickerActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  pickerCancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  pickerDoneButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  pickerButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   // Drawer styles
   drawerOverlay: {
