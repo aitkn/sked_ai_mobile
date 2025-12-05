@@ -12,31 +12,36 @@ export default function ScheduledTasksScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    loadTodaysTasks();
+    loadWeekTasks();
     // Refresh tasks every second to catch updates
-    const interval = setInterval(loadTodaysTasks, 1000);
+    const interval = setInterval(loadWeekTasks, 1000);
     return () => clearInterval(interval);
   }, []);
 
-  const loadTodaysTasks = async () => {
+  const loadWeekTasks = async () => {
     try {
       const allTasks = await internalDB.getAllTasks();
       const today = new Date();
-      const todayStr = today.toDateString();
+      today.setHours(0, 0, 0, 0); // Start of today
+      
+      // Calculate end date (today + 7 days)
+      const endDate = new Date(today);
+      endDate.setDate(endDate.getDate() + 7);
+      endDate.setHours(23, 59, 59, 999); // End of the 7th day
 
-      // Filter tasks for today
-      const todaysTasks = allTasks.filter(task => {
+      // Filter tasks for this week (today through today + 7 days)
+      const weekTasks = allTasks.filter(task => {
         const taskDate = new Date(task.start_time);
-        return taskDate.toDateString() === todayStr;
+        return taskDate >= today && taskDate <= endDate;
       });
 
       // Sort tasks by start time
-      todaysTasks.sort((a, b) => {
+      weekTasks.sort((a, b) => {
         return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
       });
 
-      console.log('📋 Scheduled Tasks: Loaded tasks for today:', todaysTasks.length);
-      setTasks(todaysTasks);
+      console.log('📋 Scheduled Tasks: Loaded tasks for this week:', weekTasks.length);
+      setTasks(weekTasks);
     } catch (error) {
       console.error('Error loading tasks for scheduled tasks:', error);
     }
@@ -44,8 +49,20 @@ export default function ScheduledTasksScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadTodaysTasks();
+    await loadWeekTasks();
     setRefreshing(false);
+  };
+
+  // Helper to format date range
+  const getWeekRange = () => {
+    const today = new Date();
+    const endDate = new Date(today);
+    endDate.setDate(endDate.getDate() + 7);
+    
+    const startStr = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    
+    return `${startStr} - ${endStr}`;
   };
 
   // Helper function to get priority-based color for pending tasks
@@ -86,14 +103,9 @@ export default function ScheduledTasksScreen() {
         }
       >
         <GlassMorphism intensity={actualTheme === 'dark' ? 'strong' : 'strong'} style={styles.header}>
-          <Text style={[styles.title, { color: colors.text }]}>Scheduled Tasks</Text>
+          <Text style={[styles.title, { color: colors.text }]}>This Week's Schedule</Text>
           <Text style={[styles.subtitle, { color: colors.text }]}>
-            {new Date().toLocaleDateString('en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric'
-            })}
+            {getWeekRange()}
           </Text>
         </GlassMorphism>
 
@@ -108,7 +120,7 @@ export default function ScheduledTasksScreen() {
             borderRadius={12}
           >
             <View style={styles.tasksTitleRow}>
-              <Text style={[styles.tasksTitle, { color: colors.text }]}>Today's Schedule</Text>
+              <Text style={[styles.tasksTitle, { color: colors.text }]}>This Week's Tasks</Text>
               <Text style={[styles.taskCount, { color: colors.textSecondary }]}>
                 {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
               </Text>
@@ -121,7 +133,7 @@ export default function ScheduledTasksScreen() {
                 styles.noTasksItem,
                 { backgroundColor: actualTheme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.15)' }
               ]}>
-                <Text style={[styles.noTasksText, { color: colors.text }]}>No tasks scheduled for today</Text>
+                <Text style={[styles.noTasksText, { color: colors.text }]}>No tasks scheduled for this week</Text>
                 <Text style={[
                   styles.promptText,
                   { color: actualTheme === 'dark' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.7)' }
@@ -179,6 +191,7 @@ export default function ScheduledTasksScreen() {
 
                   <View style={styles.taskDetails}>
                     <Text style={[styles.taskTime, { color: colors.textSecondary }]}>
+                      {new Date(task.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} at{' '}
                       {new Date(task.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -
                       {new Date(task.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>

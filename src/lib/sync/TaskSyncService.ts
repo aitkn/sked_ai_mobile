@@ -233,6 +233,7 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
         end_time: endTime,
         duration: InternalDB.calculateDuration(startTime, endTime),
         priority: 'medium',
+        colorLabel: existingTask?.colorLabel || 'none', // Preserve existing colorLabel or default to 'none'
         // Preserve original created_at if task already exists
         created_at: existingTask?.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),

@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { ColorLabelKey } from '@/constants/ColorLabels'
 
 // Internal task structure for local storage
 export interface InternalTask {
@@ -7,11 +8,13 @@ export interface InternalTask {
   start_time: string // ISO string
   end_time: string   // ISO string
   duration: number   // duration in seconds
-  status: 'pending' | 'in_progress' | 'completed' | 'paused' | 'cancelled' // task status
+  status: 'pending' | 'in_progress' | 'completed' | 'paused' | 'cancelled' | 'failed' // task status
   priority: 'low' | 'medium' | 'high' // task importance
+  colorLabel?: ColorLabelKey // color label for task categorization
   completed_at?: string // ISO string, optional
   paused_at?: string // ISO string, optional
   cancelled_at?: string // ISO string, optional
+  failed_at?: string // ISO string, optional
   created_at: string // ISO string
   updated_at: string // ISO string
 }
@@ -282,6 +285,7 @@ export class InternalDB {
         duration: taskData.duration || InternalDB.calculateDuration(taskData.start_time, taskData.end_time),
         status: taskData.status || 'pending',
         priority: taskData.priority || 'medium',
+        colorLabel: taskData.colorLabel || 'none', // Default to 'none' if not specified
         completed_at: taskData.completed_at,
         created_at: taskData.created_at || now,
         updated_at: now,
@@ -371,6 +375,7 @@ export class InternalDB {
       duration,
       status: 'pending',
       priority: 'medium',
+      colorLabel: 'none', // Test tasks default to 'none' color label
     })
 
     // Note: Task creation is a dev/testing feature, not tracked as user action
