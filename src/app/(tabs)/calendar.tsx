@@ -898,34 +898,43 @@ export default function CalendarScreen() {
               style={styles.monthTitleButton}
               activeOpacity={0.7}
             >
-              <Text 
-                style={[styles.monthText, { color: colors.text }]}
-                numberOfLines={1}
-                adjustsFontSizeToFit={true}
-                minimumFontScale={0.8}
-              >
-                {viewMode === 'month' 
-                  ? currentDate.toLocaleDateString('en-US', { 
-                      month: 'short', 
-                      year: 'numeric' 
-                    })
-                  : viewMode === 'week'
-                  ? `${currentWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(currentWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                  : viewMode === '3day'
-                  ? `${current3DayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(current3DayStart.getTime() + 2 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                  : selectedDate.toLocaleDateString('en-US', { 
-                      month: 'short', 
-                      day: 'numeric',
-                      year: 'numeric'
-                    })
-                }
-              </Text>
-              <Ionicons 
-                name="chevron-down" 
-                size={14} 
-                color={colors.text}
-                style={styles.monthChevron}
-              />
+              {viewMode === 'week' ? (
+                <Text 
+                  style={[styles.weekDateText, { color: colors.text }]}
+                  numberOfLines={1}
+                >
+                  {`${currentWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(currentWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                </Text>
+              ) : (
+                <>
+                  <Text 
+                    style={[styles.monthText, { color: colors.text }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit={true}
+                    minimumFontScale={0.8}
+                  >
+                    {viewMode === 'month' 
+                      ? currentDate.toLocaleDateString('en-US', { 
+                          month: 'short', 
+                          year: 'numeric' 
+                        })
+                      : viewMode === '3day'
+                      ? `${current3DayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(current3DayStart.getTime() + 2 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                      : selectedDate.toLocaleDateString('en-US', { 
+                          month: 'short', 
+                          day: 'numeric',
+                          year: 'numeric'
+                        })
+                    }
+                  </Text>
+                  <Ionicons 
+                    name="chevron-down" 
+                    size={14} 
+                    color={colors.text}
+                    style={styles.monthChevron}
+                  />
+                </>
+              )}
             </TouchableOpacity>
             
             <View style={styles.navigationControls}>
@@ -1865,10 +1874,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     flexShrink: 0,
-    minWidth: 100,
+    minWidth: 120,
   },
   monthText: {
     fontSize: 17,
+    fontWeight: '600',
+    marginRight: 4,
+    flexShrink: 0,
+  },
+  weekDateText: {
+    fontSize: 11.7,
     fontWeight: '600',
     marginRight: 4,
     flexShrink: 0,

@@ -227,6 +227,30 @@ export default function TaskViewScreen() {
     }
   }
 
+  // Handle cancelling a task (user-initiated stop)
+  const handleCancelTask = async (task: Task) => {
+    if (task.user_id === 'internal_user') {
+      try {
+        const cancelledAt = new Date().toISOString()
+        await internalDB.updateTask(task.local_id, { 
+          status: 'cancelled', 
+          cancelled_at: cancelledAt 
+        })
+        await internalDB.addAction({
+          action_type: 'task_cancelled',
+          task_id: task.local_id,
+          task_name: task.name,
+          details: `Cancelled by user at ${new Date().toLocaleTimeString()}`
+        })
+        await loadInternalTasks()
+        console.log(`🛑 Cancelled task: ${task.name}`)
+      } catch (error) {
+        console.error('❌ Error cancelling task:', error)
+        Alert.alert('Error', 'Failed to cancel task')
+      }
+    }
+  }
+
   // Auto-complete or fail tasks based on their status and end time
   useEffect(() => {
     const checkAndUpdateTasks = async () => {
@@ -302,12 +326,14 @@ export default function TaskViewScreen() {
     if (!task.start_time || !task.end_time) return false
     if (task.status !== 'in_progress') return false
     
-    // Only show as running if we're actually within the task's time window
+    // Show as running if we're within the task's time window
+    // (start_time and end_time are updated when task is started early)
     const now = currentTime.getTime()
     const taskStart = new Date(task.start_time).getTime()
     const taskEnd = new Date(task.end_time).getTime()
     
     // Task should be running if current time is between start and end
+    // This works for both on-time and early starts since we update the times
     return now >= taskStart && now < taskEnd
   })
 
@@ -379,18 +405,35 @@ export default function TaskViewScreen() {
   const handleStartTask = async (task: Task) => {
     if (task.user_id === 'internal_user') {
       try {
-        await internalDB.updateTask(task.local_id, { status: 'in_progress' })
+        const now = new Date()
+        const scheduledStart = new Date(task.start_time!)
+        const scheduledEnd = new Date(task.end_time!)
+        
+        // Calculate original duration
+        const originalDuration = scheduledEnd.getTime() - scheduledStart.getTime()
+        
+        // If started early, adjust end time to maintain same duration
+        let adjustedEndTime = scheduledEnd
+        if (now < scheduledStart) {
+          // Started early - adjust end time to maintain duration
+          adjustedEndTime = new Date(now.getTime() + originalDuration)
+          console.log(`⏰ Task started early. Original: ${scheduledStart.toLocaleTimeString()} - ${scheduledEnd.toLocaleTimeString()}, Adjusted: ${now.toLocaleTimeString()} - ${adjustedEndTime.toLocaleTimeString()}`)
+        }
+        
+        await internalDB.updateTask(task.local_id, { 
+          status: 'in_progress',
+          start_time: now.toISOString(), // Update start time to actual start time
+          end_time: adjustedEndTime.toISOString(), // Update end time if started early
+          duration: Math.floor(originalDuration / 1000) // Keep same duration in seconds
+        })
         await internalDB.addAction({
           action_type: 'task_started',
           task_id: task.local_id,
           task_name: task.name,
-          details: `Started at ${new Date().toLocaleTimeString()}`
+          details: `Started at ${now.toLocaleTimeString()}${now < scheduledStart ? ` (${Math.round((scheduledStart.getTime() - now.getTime()) / 1000 / 60)} minutes early)` : ''}`
         })
-        setInternalTasks(prev => prev.map(t => 
-          t.local_id === task.local_id 
-            ? { ...t, status: 'in_progress' }
-            : t
-        ))
+        // Reload tasks to ensure everything is in sync
+        await loadInternalTasks()
         console.log(`✅ Started task: ${task.name}`)
       } catch (error) {
         console.error('❌ Error starting task:', error)
@@ -654,6 +697,50 @@ export default function TaskViewScreen() {
                 ]}>
                   {formatTime(currentTaskRemaining)}
                 </Text>
+              </View>
+              
+              {/* Action Buttons */}
+              <View style={styles.currentTaskActions}>
+                <TouchableOpacity
+                  style={[styles.taskActionButton, styles.stopButton]}
+                  onPress={() => {
+                    Alert.alert(
+                      'Stop Task',
+                      `Are you sure you want to stop "${runningTask.name}"? This will cancel the task.`,
+                      [
+                        { text: 'No', style: 'cancel' },
+                        {
+                          text: 'Stop',
+                          style: 'destructive',
+                          onPress: () => handleCancelTask(runningTask)
+                        }
+                      ]
+                    )
+                  }}
+                >
+                  <FontAwesome name="stop" size={16} color="#fff" />
+                  <Text style={styles.taskActionButtonText}>Stop</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.taskActionButton, styles.completeButton]}
+                  onPress={() => {
+                    Alert.alert(
+                      'Complete Task',
+                      `Mark "${runningTask.name}" as completed?`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Complete',
+                          onPress: () => handleCompleteTask(runningTask)
+                        }
+                      ]
+                    )
+                  }}
+                >
+                  <FontAwesome name="check" size={16} color="#fff" />
+                  <Text style={styles.taskActionButtonText}>Complete</Text>
+                </TouchableOpacity>
               </View>
             </GlassMorphism>
           ) : (
@@ -1095,6 +1182,40 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.3)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+  },
+  currentTaskActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+    width: '100%',
+  },
+  taskActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  stopButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  completeButton: {
+    backgroundColor: 'rgba(76, 175, 80, 0.9)',
+  },
+  taskActionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   freeTimeCard: {
     borderRadius: 16,
