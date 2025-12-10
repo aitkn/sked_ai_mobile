@@ -32,6 +32,14 @@ try {
   console.log('Google Sign-In not available - using web OAuth flow');
 }
 
+// Conditionally import Apple Authentication to avoid errors in Expo Go
+let AppleAuthentication: any;
+try {
+  AppleAuthentication = require('expo-apple-authentication');
+} catch (error) {
+  console.log('Apple Authentication not available');
+}
+
 WebBrowser.maybeCompleteAuthSession()
 
 export default function Auth() {
@@ -39,12 +47,11 @@ export default function Auth() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
+  const [appleAuthAvailable, setAppleAuthAvailable] = useState(false)
   const router = useRouter()
   
-  const redirectTo = makeRedirectUri({
-    scheme: 'skedaiapp',
-    path: 'auth-callback',
-  })
+  // Use web callback URL for OAuth - this page will redirect to the app
+  const redirectTo = 'https://www.sked.ai/auth/mobile-callback'
   
   // For debugging - show the redirect URI
   console.log('Redirect URI:', redirectTo)
@@ -58,12 +65,23 @@ export default function Auth() {
     try {
       GoogleSignin.configure({
         scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
-        webClientId: '434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq.apps.googleusercontent.com', // TODO: Replace with your actual web client ID from Google Console
+        webClientId: '434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq.apps.googleusercontent.com',
+        iosClientId: '434260085381-YOUR_IOS_CLIENT_ID.apps.googleusercontent.com', // TODO: Replace with your iOS client ID from Google Console
         offlineAccess: true,
         forceCodeForRefreshToken: true,
       })
     } catch (error) {
       console.log('Error configuring Google Sign-In:', error)
+    }
+  }, [])
+
+  // Check if Apple Authentication is available
+  useEffect(() => {
+    if (Platform.OS === 'ios' && AppleAuthentication) {
+      AppleAuthentication.isAvailableAsync().then((available: boolean) => {
+        setAppleAuthAvailable(available)
+        console.log('Apple Authentication available:', available)
+      })
     }
   }, [])
 
@@ -211,9 +229,11 @@ export default function Auth() {
       }
       
       // On mobile, use WebBrowser (for Apple sign-in)
+      // The web callback page will redirect to this deep link
+      const appDeepLink = 'skedaiapp://auth-callback'
       const res = await WebBrowser.openAuthSessionAsync(
         data?.url ?? '',
-        redirectTo,
+        appDeepLink,
         {
           showInRecents: true,
           preferEphemeralSession: true,
@@ -259,6 +279,7 @@ export default function Auth() {
     setLoading(false)
   }
 
+  // Use web OAuth flow for Apple Sign-In
   const signInWithApple = () => signInWithProvider('apple')
 
   return (
@@ -560,6 +581,12 @@ const styles = StyleSheet.create({
   appleButton: {
     backgroundColor: '#000',
     borderColor: '#000',
+  },
+  appleNativeButton: {
+    width: '100%',
+    height: 50,
+    marginTop: 10,
+    marginBottom: 10,
   },
   socialIcon: {
     marginRight: 10,

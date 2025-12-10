@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { Platform } from 'react-native'
 
 // Use custom domain if available, otherwise fall back to Supabase domain
-const supabaseUrl = 'https://api.skedai.com' // Custom domain
+const supabaseUrl = 'https://api.sked.ai' // Custom domain
 // const supabaseUrl = 'https://jfcurpgmlzlceotuthat.supabase.co' // Supabase domain
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpmY3VycGdtbHpsY2VvdHV0aGF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mjg3OTg4ODksImV4cCI6MjA0NDM3NDg4OX0.fLKoJ_WOoCT_HZvoC1OlJnek57_WMd_C0vwYvh_1C1g'
 
