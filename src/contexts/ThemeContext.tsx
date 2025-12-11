@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme as useDeviceColorScheme } from 'react-native';
 import Colors from '@/constants/Colors';
+import { safeStorage } from '@/lib/storage';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -25,7 +25,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const loadTheme = async () => {
       try {
-        const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        const savedTheme = await safeStorage.getItem(THEME_STORAGE_KEY);
         if (savedTheme && ['light', 'dark', 'system'].includes(savedTheme)) {
           setThemeState(savedTheme as Theme);
         }
@@ -41,7 +41,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Save theme preference
   const setTheme = async (newTheme: Theme) => {
     try {
-      await AsyncStorage.setItem(THEME_STORAGE_KEY, newTheme);
+      await safeStorage.setItem(THEME_STORAGE_KEY, newTheme);
       setThemeState(newTheme);
     } catch (error) {
       console.error('Error saving theme:', error);

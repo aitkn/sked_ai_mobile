@@ -6,8 +6,8 @@
 
 import Constants from 'expo-constants';
 
-// Get Supabase URL from supabase.ts
-const SUPABASE_URL = 'https://api.skedai.com'; // Match supabase.ts
+// Get Supabase URL - use working Supabase domain (api.skedai.com has SSL issues)
+const SUPABASE_URL = 'https://jfcurpgmlzlceotuthat.supabase.co';
 
 // Use Edge Function (production) or local proxy (development)
 // Check environment variables

@@ -47,6 +47,7 @@ export default function CalendarScreen() {
   const [editedStartTime, setEditedStartTime] = useState<Date | null>(null);
   const [editedEndTime, setEditedEndTime] = useState<Date | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showPriorityPicker, setShowPriorityPicker] = useState(false);
   const syncIntervalRef = useRef<NodeJS.Timeout | number | null>(null);
   const monthPickerScrollRef = useRef<ScrollView>(null);
   const timeGridScrollRef = useRef<ScrollView>(null);
@@ -447,6 +448,30 @@ export default function CalendarScreen() {
     } catch (error) {
       console.error('Error updating task color label:', error);
       Alert.alert('Error', 'Failed to update color label');
+    }
+  };
+
+  const handlePriorityChange = async (priority: 'low' | 'medium' | 'high') => {
+    if (!selectedTask) return;
+    
+    try {
+      await internalDB.updateTask(selectedTask.id, {
+        priority: priority,
+      });
+
+      // Reload tasks to reflect changes
+      await loadTasks();
+      
+      // Update selected task to show new priority
+      const updatedTask = await internalDB.getTaskById(selectedTask.id);
+      if (updatedTask) {
+        setSelectedTask(updatedTask);
+      }
+      
+      setShowPriorityPicker(false);
+    } catch (error) {
+      console.error('Error updating task priority:', error);
+      Alert.alert('Error', 'Failed to update priority');
     }
   };
 
@@ -1243,16 +1268,30 @@ export default function CalendarScreen() {
                    </TouchableOpacity>
                  </View>
 
-                 <View style={styles.simpleModalBody}>
-                   {/* Priority */}
-                   <View style={styles.simpleModalRow}>
-                     <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Priority:</Text>
-                     <Text style={[styles.simpleModalValue, { color: colors.text }]}>
-                       {selectedTask.priority}
-                     </Text>
-                   </View>
+                <View style={styles.simpleModalBody}>
+                  {/* Priority */}
+                  <TouchableOpacity
+                    onPress={() => setShowPriorityPicker(true)}
+                    activeOpacity={0.7}
+                    style={styles.simpleModalRow}
+                  >
+                    <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Priority:</Text>
+                    <View style={[styles.colorLabelButton, { 
+                      backgroundColor: selectedTask.priority === 'high' ? '#EF535020' : 
+                                       selectedTask.priority === 'low' ? '#4CAF5020' : '#FFA72620'
+                    }]}>
+                      <View style={[styles.colorLabelSwatch, { 
+                        backgroundColor: selectedTask.priority === 'high' ? '#EF5350' : 
+                                         selectedTask.priority === 'low' ? '#4CAF50' : '#FFA726'
+                      }]} />
+                      <Text style={[styles.simpleModalValue, { color: colors.text, marginLeft: 8 }]}>
+                        {selectedTask.priority.charAt(0).toUpperCase() + selectedTask.priority.slice(1)}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} style={{ marginLeft: 8 }} />
+                    </View>
+                  </TouchableOpacity>
 
-                   {/* Status */}
+                  {/* Status */}
                    <View style={styles.simpleModalRow}>
                      <Text style={[styles.simpleModalLabel, { color: colors.textSecondary }]}>Status:</Text>
                      <Text style={[
@@ -1444,16 +1483,54 @@ export default function CalendarScreen() {
                  </View>
                </View>
              </Pressable>
-             {/* Color Label Picker - Rendered inside modal to ensure proper layering */}
-             <ColorLabelPicker
-               visible={showColorPicker}
-               selectedLabel={selectedTask?.colorLabel}
-               onSelect={handleColorLabelChange}
-               onClose={() => setShowColorPicker(false)}
-             />
-           </View>
-         </Modal>
-       )}
+            {/* Color Label Picker - Rendered inside modal to ensure proper layering */}
+            <ColorLabelPicker
+              visible={showColorPicker}
+              selectedLabel={selectedTask?.colorLabel}
+              onSelect={handleColorLabelChange}
+              onClose={() => setShowColorPicker(false)}
+            />
+            
+            {/* Priority Picker */}
+            {showPriorityPicker && (
+              <View style={styles.priorityPickerOverlay}>
+                <Pressable 
+                  style={StyleSheet.absoluteFillObject} 
+                  onPress={() => setShowPriorityPicker(false)} 
+                />
+                <View style={[styles.priorityPickerCard, { 
+                  backgroundColor: actualTheme === 'dark' ? 'rgba(40,40,50,0.98)' : 'rgba(255,255,255,0.98)' 
+                }]}>
+                  <Text style={[styles.priorityPickerTitle, { color: colors.text }]}>
+                    Select Priority
+                  </Text>
+                  {(['low', 'medium', 'high'] as const).map((priority) => (
+                    <TouchableOpacity
+                      key={priority}
+                      style={[
+                        styles.priorityOption,
+                        selectedTask?.priority === priority && styles.priorityOptionSelected,
+                        { borderColor: priority === 'high' ? '#EF5350' : priority === 'low' ? '#4CAF50' : '#FFA726' }
+                      ]}
+                      onPress={() => handlePriorityChange(priority)}
+                    >
+                      <View style={[styles.priorityDot, { 
+                        backgroundColor: priority === 'high' ? '#EF5350' : priority === 'low' ? '#4CAF50' : '#FFA726'
+                      }]} />
+                      <Text style={[styles.priorityOptionText, { color: colors.text }]}>
+                        {priority.charAt(0).toUpperCase() + priority.slice(1)}
+                      </Text>
+                      {selectedTask?.priority === priority && (
+                        <Ionicons name="checkmark" size={20} color={colors.tint} style={{ marginLeft: 'auto' }} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+        </Modal>
+      )}
 
       {/* Chat Assistant Modal - Replaces Task Input Modal */}
       <Modal
@@ -2712,6 +2789,53 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
+  },
+  // Priority Picker styles
+  priorityPickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  priorityPickerCard: {
+    width: '80%',
+    maxWidth: 300,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  priorityPickerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  priorityOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  priorityOptionSelected: {
+    borderWidth: 2,
+  },
+  priorityDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  priorityOptionText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
   // Drawer styles
   drawerOverlay: {
