@@ -278,3 +278,98 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
   }
 }
 
+/**
+ * Subscribe to task_solution changes for real-time updates
+ * When the solver creates new solutions, this will trigger a sync
+ * 
+ * @param onSolutionUpdate - Callback when new solutions are detected
+ * @returns Cleanup function to unsubscribe
+ */
+export function subscribeToTaskSolutions(
+  onSolutionUpdate: () => void
+): () => void {
+  console.log('[TaskSync] Setting up realtime subscription for task_solution...');
+  
+  const channel = supabase
+    .channel('task-solutions-realtime')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'task_solution',
+      },
+      (payload) => {
+        console.log('[TaskSync] New task_solution detected via realtime:', payload.new);
+        onSolutionUpdate();
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'task_solution',
+      },
+      (payload) => {
+        console.log('[TaskSync] task_solution updated via realtime:', payload.new);
+        onSolutionUpdate();
+      }
+    )
+    .subscribe((status) => {
+      console.log('[TaskSync] Realtime subscription status:', status);
+    });
+
+  // Return cleanup function
+  return () => {
+    console.log('[TaskSync] Cleaning up realtime subscription...');
+    supabase.removeChannel(channel);
+  };
+}
+
+/**
+ * Subscribe to model status changes
+ * This can notify when the solver has finished processing
+ * 
+ * @param userId - User ID to filter updates for
+ * @param onModelProcessed - Callback when a model is processed
+ * @returns Cleanup function to unsubscribe
+ */
+export function subscribeToModelUpdates(
+  userId: string,
+  onModelProcessed: () => void
+): () => void {
+  console.log('[TaskSync] Setting up realtime subscription for model updates...');
+  
+  const channel = supabase
+    .channel('model-updates-realtime')
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'model',
+        filter: `user_id=eq.${userId}`,
+      },
+      (payload) => {
+        const newStatus = (payload.new as any)?.status;
+        console.log('[TaskSync] Model updated via realtime, status:', newStatus);
+        
+        // Trigger sync when model is processed
+        if (newStatus === 'processed') {
+          console.log('[TaskSync] Model processed, triggering sync...');
+          onModelProcessed();
+        }
+      }
+    )
+    .subscribe((status) => {
+      console.log('[TaskSync] Model subscription status:', status);
+    });
+
+  // Return cleanup function
+  return () => {
+    console.log('[TaskSync] Cleaning up model subscription...');
+    supabase.removeChannel(channel);
+  };
+}
+

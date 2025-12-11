@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase'
 import { useFocusEffect } from 'expo-router'
 import { GlassMorphism } from '@/components/GlassMorphism'
 import { ThemedGradient } from '@/components/ThemedGradient'
-import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService'
+import { syncTasksFromSupabase, subscribeToTaskSolutions } from '@/lib/sync/TaskSyncService'
 import { getColorForLabel, getLabelName, ColorLabelKey } from '@/constants/ColorLabels'
 import { ColorLabelPicker } from '@/components/ColorLabelPicker'
 import { rescheduleAndRepack, getNextDelay } from '@/lib/task-scheduler'
@@ -52,6 +52,7 @@ export default function TaskViewScreen() {
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [taskForColorEdit, setTaskForColorEdit] = useState<Task & { colorLabel?: string } | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date())
+  const [userId, setUserId] = useState<string | null>(null)
 
   // Load internal tasks
   const loadInternalTasks = async () => {
@@ -149,6 +150,15 @@ export default function TaskViewScreen() {
     }
   }
 
+  // Get current user on mount
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUserId(user.id)
+      }
+    })
+  }, [])
+
   useEffect(() => {
     loadInternalTasks()
     loadTimelineData()
@@ -159,6 +169,24 @@ export default function TaskViewScreen() {
       clearInterval(timeInterval)
     }
   }, [])
+
+  // Subscribe to realtime task_solution updates from the solver
+  useEffect(() => {
+    if (userId) {
+      console.log('[Schedule] Setting up realtime subscription for task solutions...')
+      
+      const unsubscribe = subscribeToTaskSolutions(async () => {
+        console.log('[Schedule] Received realtime update, syncing tasks...')
+        await syncTasksFromSupabase()
+        await loadInternalTasks()
+      })
+
+      return () => {
+        console.log('[Schedule] Cleaning up realtime subscription...')
+        unsubscribe()
+      }
+    }
+  }, [userId])
 
   useFocusEffect(
     useCallback(() => {
