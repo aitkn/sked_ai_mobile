@@ -4,8 +4,11 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
+    "start:localhost": "expo start --localhost",
+    "start:tunnel": "expo start --tunnel",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "ios:localhost": "EXPO_USE_LOCALHOST=true expo run:ios",
     "web": "expo start --web",
     "test": "jest --watchAll",
     "android:build": "cd ../android && ./gradlew build",

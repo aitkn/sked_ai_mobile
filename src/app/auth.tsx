@@ -66,7 +66,7 @@ export default function Auth() {
       GoogleSignin.configure({
         scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
         webClientId: '434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq.apps.googleusercontent.com',
-        iosClientId: '434260085381-YOUR_IOS_CLIENT_ID.apps.googleusercontent.com', // TODO: Replace with your iOS client ID from Google Console
+        iosClientId: '434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq.apps.googleusercontent.com', // Using web client ID for now - replace with iOS client ID from Google Console when available
         offlineAccess: true,
         forceCodeForRefreshToken: true,
       })

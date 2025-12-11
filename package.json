@@ -1,4 +1,11 @@
 {
+  "scripts": {
+    "start": "cd src && npm start",
+    "android": "cd src && npm run android",
+    "ios": "cd src && npm run ios",
+    "web": "cd src && npm run web",
+    "test": "cd src && npm test"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",
     "@twodoorsdev/react-native-debugger-mcp": "^1.0.0",

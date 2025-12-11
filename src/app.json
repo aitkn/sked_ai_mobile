@@ -20,7 +20,8 @@
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
-              "skedaiapp"
+              "skedaiapp",
+              "com.googleusercontent.apps.434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq"
             ]
           }
         ],
