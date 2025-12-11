@@ -11,7 +11,7 @@ import Colors from '@/constants/Colors';
 import { GlassMorphism } from '@/components/GlassMorphism';
 import { ThemedGradient } from '@/components/ThemedGradient';
 import { internalDB, InternalTask, InternalDB } from '@/lib/internal-db';
-import { syncTasksFromSupabase } from '@/lib/sync/TaskSyncService';
+import { syncTasksFromSupabase, subscribeToTaskSolutions } from '@/lib/sync/TaskSyncService';
 import { ChatAssistant } from '@/components/ChatAssistant';
 import { ColorLegendBar } from '@/components/ColorLegendBar';
 import { ColorLabelPicker } from '@/components/ColorLabelPicker';
@@ -80,6 +80,24 @@ export default function CalendarScreen() {
       }
     };
   }, []);
+
+  // Subscribe to realtime task_solution updates from the solver
+  useEffect(() => {
+    if (session?.user?.id) {
+      console.log('[Calendar] Setting up realtime subscription for task solutions...');
+      
+      const unsubscribe = subscribeToTaskSolutions(async () => {
+        console.log('[Calendar] Received realtime update, syncing tasks...');
+        await syncTasksFromSupabase();
+        await loadTasks();
+      });
+
+      return () => {
+        console.log('[Calendar] Cleaning up realtime subscription...');
+        unsubscribe();
+      };
+    }
+  }, [session?.user?.id]);
 
   // Scroll to current year when month picker opens
   useEffect(() => {
