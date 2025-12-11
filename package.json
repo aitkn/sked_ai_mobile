@@ -1,10 +1,11 @@
 {
   "scripts": {
-    "start": "cd src && npm start",
-    "android": "cd src && npm run android",
-    "ios": "cd src && npm run ios",
-    "web": "cd src && npm run web",
-    "test": "cd src && npm test"
+    "start": "npm run --prefix src start",
+    "android": "npm run --prefix src android",
+    "ios": "npm run --prefix src ios",
+    "ios:localhost": "npm run --prefix src ios:localhost",
+    "web": "npm run --prefix src web",
+    "test": "npm run --prefix src test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",
