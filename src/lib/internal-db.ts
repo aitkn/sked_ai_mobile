@@ -15,6 +15,9 @@ export interface InternalTask {
   paused_at?: string // ISO string, optional
   cancelled_at?: string // ISO string, optional
   failed_at?: string // ISO string, optional
+  reschedule_count?: number // number of times task has been rescheduled
+  last_reschedule_at?: string // ISO string, when task was last rescheduled
+  original_start_time?: string // ISO string, original scheduled start time before any reschedules
   created_at: string // ISO string
   updated_at: string // ISO string
 }
@@ -22,7 +25,7 @@ export interface InternalTask {
 // Internal action structure for tracking user actions
 export interface InternalAction {
   id: string
-  action_type: 'task_started' | 'task_completed' | 'task_skipped' | 'task_paused' | 'task_cancelled' | 'task_resumed'
+  action_type: 'task_started' | 'task_completed' | 'task_skipped' | 'task_paused' | 'task_cancelled' | 'task_resumed' | 'task_rescheduled'
   task_id: string
   task_name: string
   timestamp: string // ISO string

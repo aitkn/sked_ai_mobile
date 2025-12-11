@@ -245,14 +245,44 @@ export default function Auth() {
           }
         } else if (responseUrl.searchParams.get('code')) {
           const code = responseUrl.searchParams.get('code')
-          await supabase.auth.exchangeCodeForSession(code!)
+          console.log('Exchanging code for session...')
+          
+          const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code!)
+          
+          if (exchangeError) {
+            console.error('Code exchange error:', exchangeError)
+            // More specific error message
+            if (exchangeError.message?.includes('Network request failed') || exchangeError.message?.includes('fetch')) {
+              throw new Error('Network error: Unable to reach authentication server. Please check your internet connection and try again.')
+            }
+            throw exchangeError
+          }
+          
+          if (!exchangeData.session) {
+            throw new Error('Failed to create session after code exchange')
+          }
+          
+          console.log('Code exchanged successfully, session created')
         }
       }
     } catch (error: any) {
       const providerName = provider.charAt(0).toUpperCase() + provider.slice(1)
+      console.error(`${providerName} sign-in error:`, error)
+      
+      let errorMessage = error.message || `Failed to sign in with ${providerName}`
+      
+      // Provide more helpful error messages
+      if (errorMessage.includes('Network request failed')) {
+        errorMessage = 'Network error: Unable to connect to the authentication server. Please check:\n\n1. Your internet connection\n2. That api.skedai.com is accessible\n3. Try again in a moment'
+      } else if (errorMessage.includes('redirect_uri_mismatch')) {
+        errorMessage = 'Configuration error: The redirect URI is not registered. Please contact support.'
+      } else if (errorMessage.includes('invalid_grant') || errorMessage.includes('code')) {
+        errorMessage = 'Authentication code expired or invalid. Please try signing in again.'
+      }
+      
       Alert.alert(
         `${providerName} Sign In Failed`,
-        error.message || `Failed to sign in with ${providerName}`,
+        errorMessage,
         [{ text: 'OK' }]
       )
     }

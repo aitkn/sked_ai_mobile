@@ -8,6 +8,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 })
 
@@ -92,6 +94,7 @@ export class ExpoNotificationService {
           data: { taskId: task.local_id, type },
         },
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
           date: new Date(triggerDate),
         },
       })
@@ -113,6 +116,68 @@ export class ExpoNotificationService {
       }
     } catch (error) {
       console.error('Error canceling Expo notifications:', error)
+    }
+  }
+
+  /**
+   * Schedule a notification for a rescheduled task
+   * @param taskName Name of the task
+   * @param newTime New scheduled time for the task
+   * @param attemptNumber Which reschedule attempt this is (1, 2, 3, etc.)
+   */
+  async scheduleRescheduleNotification(
+    taskName: string,
+    newTime: Date,
+    attemptNumber: number
+  ) {
+    if (!this.initialized) await this.initialize()
+
+    const timeString = newTime.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    })
+
+    const title = `⏰ Task Rescheduled: ${taskName}`
+    const body = attemptNumber === 1
+      ? `Missed task rescheduled to ${timeString}. Tap to start!`
+      : `Rescheduled to ${timeString} (attempt ${attemptNumber}). Don't miss it this time!`
+
+    try {
+      // Send immediate notification about the reschedule
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          data: { taskName, newTime: newTime.toISOString(), type: 'reschedule', attemptNumber },
+          categoryIdentifier: 'task',
+          sound: true,
+        },
+        trigger: null, // Immediate notification
+      })
+
+      console.log(`📲 Sent reschedule notification for "${taskName}" - attempt ${attemptNumber}`)
+
+      // Also schedule a reminder 2 minutes before the new time
+      const reminderTime = new Date(newTime.getTime() - 2 * 60 * 1000)
+      if (reminderTime > new Date()) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `⏰ Starting Soon: ${taskName}`,
+            body: `Your rescheduled task starts in 2 minutes at ${timeString}`,
+            data: { taskName, newTime: newTime.toISOString(), type: 'reschedule-reminder', attemptNumber },
+            categoryIdentifier: 'task',
+            sound: true,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: reminderTime,
+          },
+        })
+        console.log(`📲 Scheduled 2-minute reminder for "${taskName}"`)
+      }
+    } catch (error) {
+      console.error('Error scheduling reschedule notification:', error)
     }
   }
 }
