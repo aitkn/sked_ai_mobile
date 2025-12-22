@@ -28,6 +28,7 @@ try {
   GoogleSignin = googleSignIn.GoogleSignin;
   GoogleSigninButton = googleSignIn.GoogleSigninButton;
   statusCodes = googleSignIn.statusCodes;
+  console.log('Google Sign-In available');
 } catch (error) {
   console.log('Google Sign-In not available - using web OAuth flow');
 }
@@ -58,7 +59,8 @@ export default function Auth() {
     try {
       GoogleSignin.configure({
         scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
-        webClientId: '434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq.apps.googleusercontent.com', // TODO: Replace with your actual web client ID from Google Console
+        webClientId: '434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq.apps.googleusercontent.com',
+        iosClientId: '628761900025-r3fcp8bk4cicchq36rq2jrqob91dktcq.apps.googleusercontent.com',
         offlineAccess: true,
         forceCodeForRefreshToken: true,
       })

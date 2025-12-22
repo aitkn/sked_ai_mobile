@@ -15,12 +15,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.skedai.app",
+      "bundleIdentifier": "ai.sked.app",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
-              "skedaiapp"
+              "skedaiapp",
+              "com.googleusercontent.apps.628761900025-r3fcp8bk4cicchq36rq2jrqob91dktcq"
             ]
           }
         ],
@@ -80,6 +82,12 @@
         {
           "icon": "./assets/images/icon.png",
           "color": "#ffffff"
+        }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.628761900025-r3fcp8bk4cicchq36rq2jrqob91dktcq"
         }
       ]
     ],
