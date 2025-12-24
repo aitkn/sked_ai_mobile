@@ -59,7 +59,7 @@ export default function Auth() {
     try {
       GoogleSignin.configure({
         scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
-        webClientId: '434260085381-cppbc7o9l0t7eim9vit9a36eltn4nnmq.apps.googleusercontent.com',
+        webClientId: '628761900025-cudnji3cdi9bcp5tfbs54rc02gjplofn.apps.googleusercontent.com',
         iosClientId: '628761900025-r3fcp8bk4cicchq36rq2jrqob91dktcq.apps.googleusercontent.com',
         offlineAccess: true,
         forceCodeForRefreshToken: true,
@@ -150,6 +150,8 @@ export default function Auth() {
         
         if (userInfo.data?.idToken) {
           // Sign in with Supabase using the ID token
+          // Note: For native Google Sign-In, nonce is managed by Google
+          // and requires "Skip nonce checks" enabled in Supabase
           const { data, error } = await supabase.auth.signInWithIdToken({
             provider: 'google',
             token: userInfo.data.idToken,

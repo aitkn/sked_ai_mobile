@@ -28,6 +28,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>skedaiapp</string>
+          <string>com.googleusercontent.apps.628761900025-r3fcp8bk4cicchq36rq2jrqob91dktcq</string>
         </array>
       </dict>
     </array>
