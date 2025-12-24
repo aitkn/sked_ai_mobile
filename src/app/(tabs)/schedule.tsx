@@ -20,8 +20,6 @@ import { ThemedGradient } from '@/components/ThemedGradient'
 import { syncTasksFromSupabase, subscribeToTaskSolutions } from '@/lib/sync/TaskSyncService'
 import { getColorForLabel, getLabelName, ColorLabelKey } from '@/constants/ColorLabels'
 import { ColorLabelPicker } from '@/components/ColorLabelPicker'
-import { rescheduleAndRepack, getNextDelay } from '@/lib/task-scheduler'
-import { ExpoNotificationService } from '@/lib/notifications/expo-notifications'
 
 // Helper function to convert InternalTask to Task format
 const convertInternalTaskToTask = (internalTask: InternalTask): Task & { colorLabel?: string } => ({
@@ -299,12 +297,10 @@ export default function TaskViewScreen() {
         // Skip if already in correct final state
         if (task.status === 'completed' || task.status === 'failed') continue
         
-        const taskStart = new Date(task.start_time).getTime()
         const taskEnd = new Date(task.end_time).getTime()
-        const gracePeriodMs = 2 * 60 * 1000 // 2 minutes grace period for pending tasks
         
         // For in_progress tasks: check if end_time passed (auto-complete)
-        // For pending tasks: check if 2 minutes past start_time (trigger reschedule)
+        // For pending tasks: server handles rescheduling via refresh_models
         if (task.status === 'in_progress') {
           const hasExpired = now > taskEnd
           if (!hasExpired) continue
@@ -323,47 +319,10 @@ export default function TaskViewScreen() {
           })
           console.log(`✅ Auto-completed expired task: ${task.name}`)
           hasUpdates = true
-        } else if (task.status === 'pending') {
-          // Trigger reschedule if 2 minutes past start time and not started
-          const shouldReschedule = now > taskStart + gracePeriodMs
-          if (!shouldReschedule) continue
-          // Never started task that expired - try progressive rescheduling
-          // Get the internal task to access reschedule_count
-          const internalTask = freshTasks.find(t => t.id === task.local_id)
-          if (!internalTask) continue
-          
-          const rescheduleCount = internalTask.reschedule_count || 0
-          const delay = getNextDelay(rescheduleCount)
-          
-          console.log(`⏰ Task "${task.name}" expired. Attempting reschedule #${rescheduleCount + 1} with ${delay} minute delay...`)
-          
-          // Attempt to reschedule the task
-          const result = await rescheduleAndRepack(internalTask)
-          
-          if (result.success && result.newStartTime) {
-            // Successfully rescheduled - send notification
-            console.log(`🔄 Rescheduled task "${task.name}" to ${result.newStartTime.toLocaleTimeString()}`)
-            
-            // Send push notification about the reschedule
-            try {
-              const notificationService = new ExpoNotificationService()
-              await notificationService.scheduleRescheduleNotification(
-                task.name,
-                result.newStartTime,
-                rescheduleCount + 1
-              )
-            } catch (notifError) {
-              console.warn('Failed to send reschedule notification:', notifError)
-            }
-            
-            hasUpdates = true
-          } else {
-            // Could not reschedule - task has failed (no available slots)
-            console.log(`❌ Could not reschedule task "${task.name}": ${result.message}`)
-            // The rescheduleAndRepack function already marks the task as failed
-            hasUpdates = true
-          }
         }
+        // NOTE: We don't mark pending tasks as failed locally.
+        // The server-side solver (refresh_models) handles rescheduling.
+        // If it can't reschedule, the server will update task_solution accordingly.
       }
       
       // Only reload tasks if we made updates (to avoid unnecessary re-renders)
