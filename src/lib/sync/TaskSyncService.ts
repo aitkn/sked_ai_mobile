@@ -3,10 +3,19 @@
  *
  * Syncs tasks from Supabase task_solution table to internalDB
  * Similar to web app's sync approach
+ * 
+ * After sync:
+ * - Schedules local notifications for upcoming tasks
+ * - Records sync with server for fallback notification tracking
  */
 
 import { supabase } from '../supabase';
 import { internalDB, InternalDB, InternalTask } from '../internal-db';
+import { 
+  scheduleLocalNotifications, 
+  getUserNotificationOffset 
+} from '../notifications/local-scheduler';
+import { recordClientSync } from '../notifications/push-service';
 
 // Epoch reference date (same as web app)
 const EPOCH = new Date('2020-01-01T00:00:00Z');
@@ -266,6 +275,23 @@ export async function syncTasksFromSupabase(): Promise<{ success: boolean; taskC
     // Verify what's actually in internalDB now
     const finalTasks = await internalDB.getAllTasks();
     console.log(`[TaskSync] 📋 Final internalDB task count: ${finalTasks.length}`);
+    
+    // Schedule local notifications for upcoming tasks
+    try {
+      const notificationOffset = await getUserNotificationOffset();
+      await scheduleLocalNotifications(finalTasks, notificationOffset);
+      console.log(`[TaskSync] 📅 Local notifications scheduled`);
+    } catch (notifError) {
+      console.error('[TaskSync] Error scheduling notifications:', notifError);
+    }
+    
+    // Record sync with server (for fallback notification tracking)
+    try {
+      await recordClientSync();
+      console.log(`[TaskSync] 📡 Sync recorded with server`);
+    } catch (syncRecordError) {
+      console.error('[TaskSync] Error recording sync:', syncRecordError);
+    }
     
     return { success: true, taskCount: syncedCount };
 
