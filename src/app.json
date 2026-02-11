@@ -17,6 +17,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "ai.sked.app",
       "usesAppleSignIn": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "entitlements": {
+        "aps-environment": "production",
+        "com.apple.developer.usernotifications.time-sensitive": true
+      },
       "infoPlist": {
         "CFBundleURLTypes": [
           {
@@ -28,9 +33,14 @@
         ],
         "UIBackgroundModes": [
           "fetch",
-          "remote-notification"
+          "remote-notification",
+          "location",
+          "processing"
         ],
-        "NSUserNotificationUsageDescription": "SkedAI needs notification permissions to remind you about your tasks."
+        "NSUserNotificationUsageDescription": "SkedAI needs notification permissions to remind you about your tasks.",
+        "NSLocationWhenInUseUsageDescription": "SkedAI uses your location to auto-start tasks when you arrive at or leave locations.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SkedAI uses your location in the background to auto-complete commute tasks.",
+        "BGTaskSchedulerPermittedIdentifiers": ["ai.sked.app.refresh"]
       }
     },
     "android": {
@@ -39,10 +49,16 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.skedai.app",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE", 
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ],
       "intentFilters": [
         {
@@ -67,6 +83,8 @@
     },
     "plugins": [
       "expo-router",
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
       [
         "expo-build-properties",
         {
@@ -74,6 +92,9 @@
             "compileSdkVersion": 35,
             "targetSdkVersion": 34,
             "minSdkVersion": 24
+          },
+          "ios": {
+            "useFrameworks": "static"
           }
         }
       ],

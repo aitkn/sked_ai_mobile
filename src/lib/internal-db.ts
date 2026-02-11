@@ -4,12 +4,14 @@ import { ColorLabelKey } from '@/constants/ColorLabels'
 // Internal task structure for local storage
 export interface InternalTask {
   id: string
+  server_id?: string // Supabase task_id for syncing
   name: string
   start_time: string // ISO string
   end_time: string   // ISO string
   duration: number   // duration in seconds
   status: 'pending' | 'in_progress' | 'completed' | 'paused' | 'cancelled' | 'failed' // task status
   priority: 'low' | 'medium' | 'high' // task importance
+  task_type?: string // task type (e.g., 'commute', 'travel', 'work')
   colorLabel?: ColorLabelKey // color label for task categorization
   completed_at?: string // ISO string, optional
   paused_at?: string // ISO string, optional
@@ -18,6 +20,7 @@ export interface InternalTask {
   reschedule_count?: number // number of times task has been rescheduled
   last_reschedule_at?: string // ISO string, when task was last rescheduled
   original_start_time?: string // ISO string, original scheduled start time before any reschedules
+  pending_auto_action?: 'start' | 'complete' | 'pause' | null // pending auto-action to confirm
   created_at: string // ISO string
   updated_at: string // ISO string
 }
@@ -25,11 +28,13 @@ export interface InternalTask {
 // Internal action structure for tracking user actions
 export interface InternalAction {
   id: string
-  action_type: 'task_started' | 'task_completed' | 'task_skipped' | 'task_paused' | 'task_cancelled' | 'task_resumed' | 'task_rescheduled'
-  task_id: string
-  task_name: string
+  action_type: 'task_started' | 'task_completed' | 'task_skipped' | 'task_paused' | 'task_cancelled' | 'task_resumed' | 'task_rescheduled' | 'start' | 'complete' | 'pause' | 'cancel'
+  task_id?: string // deprecated, use task_local_id
+  task_local_id?: string // local task ID
+  task_name?: string
   timestamp: string // ISO string
   details?: string // optional additional information
+  synced?: boolean // whether action has been synced to server
 }
 
 const STORAGE_KEY = 'internal_tasks'
@@ -456,8 +461,57 @@ export class InternalDB {
   // Get actions for a specific task
   async getActionsForTask(taskId: string): Promise<InternalAction[]> {
     await this.loadActions()
-    return this.actions.filter(action => action.task_id === taskId)
+    return this.actions.filter(action => action.task_id === taskId || action.task_local_id === taskId)
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+  }
+
+  // Alias for getTaskById (used by notification services)
+  async getTask(id: string): Promise<InternalTask | null> {
+    return this.getTaskById(id)
+  }
+
+  // Get actions for a task (alias for getActionsForTask)
+  async getActions(taskId: string): Promise<InternalAction[]> {
+    return this.getActionsForTask(taskId)
+  }
+
+  // Save action (upsert)
+  async saveAction(action: InternalAction): Promise<InternalAction> {
+    await this.loadActions()
+    
+    const existingIndex = this.actions.findIndex(a => a.id === action.id)
+    
+    if (existingIndex >= 0) {
+      this.actions[existingIndex] = action
+    } else {
+      this.actions.push(action)
+    }
+    
+    await this.saveActions()
+    console.log('📝 Saved action to internal DB:', action.action_type)
+    return action
+  }
+
+  // Update an action
+  async updateAction(id: string, updates: Partial<InternalAction>): Promise<InternalAction | null> {
+    await this.loadActions()
+    
+    const actionIndex = this.actions.findIndex(action => action.id === id)
+    if (actionIndex === -1) {
+      console.warn('⚠️ Action not found for update:', id)
+      return null
+    }
+
+    const updatedAction = {
+      ...this.actions[actionIndex],
+      ...updates,
+    }
+
+    this.actions[actionIndex] = updatedAction
+    await this.saveActions()
+    
+    console.log('📝 Updated action in internal DB:', updatedAction.action_type)
+    return updatedAction
   }
 
   // Get tasks by status
