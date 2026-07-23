@@ -6,7 +6,9 @@ import { safeStorage } from './storage'
 // Use custom domain if available, otherwise fall back to Supabase domain
 // const supabaseUrl = 'https://api.skedai.com' // Custom domain (currently has SSL issues)
 const supabaseUrl = 'https://jfcurpgmlzlceotuthat.supabase.co' // Supabase domain (working)
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpmY3VycGdtbHpsY2VvdHV0aGF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mjg3OTg4ODksImV4cCI6MjA0NDM3NDg4OX0.fLKoJ_WOoCT_HZvoC1OlJnek57_WMd_C0vwYvh_1C1g'
+// Publishable key (new Supabase API key format). Replaces the legacy `anon` JWT
+// so the app keeps working after legacy JWT keys are disabled. Public-safe to embed.
+const supabaseAnonKey = 'sb_publishable_k6KtN2UhgC6LIdRQca3abA_3_ATZxIg'
 
 // Create custom storage adapter that works on web and handles storage errors
 const customStorage = Platform.OS === 'web' ? {
